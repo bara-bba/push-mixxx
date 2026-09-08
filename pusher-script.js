@@ -4,8 +4,10 @@
 //
 //  MIDI convention: Traktor C-1=0  →  C2=36=0x24  (Push 2 bottom-left pad)
 //  0x90 = Note On Ch1 (pads, static LED)
-//  0x9A = Note On Ch11 (pads, blinking animation on Push 2)
 //  0xB0 = CC Ch1 (encoders & buttons)
+//
+//  All state indicators use static color changes only (no blinking/heartbeat
+//  animation) — simpler and less confusing to read at a glance.
 //
 //  LAYOUT  col→  1      2      3    [4=VU]  5      6      7   [8=VU]
 //  row↓
@@ -31,7 +33,6 @@ var PUSH2T = {};
 
 // ─── MIDI STATUS BYTES ────────────────────────────────────────────────────────
 PUSH2T.PAD_STATIC  = 0x90;   // Note On Ch1   → static pad color
-PUSH2T.PAD_BLINK   = 0x9A;   // Note On Ch11  → blinking pad (Push 2 animation)
 PUSH2T.BTN_STATIC  = 0xB0;   // CC Ch1        → button static (not used for LEDs here)
 
 // ─── PUSH 2 COLOR PALETTE (6-bit index) ──────────────────────────────────────
@@ -147,11 +148,6 @@ PUSH2T.shutdown = function () {
     // Release any active scratch so decks don't get stuck
     if (engine.isScratching(1)) { engine.scratchDisable(1); }
     if (engine.isScratching(2)) { engine.scratchDisable(2); }
-    // Stop the record heartbeat blink if running
-    if (PUSH2T._recordBlinkTimer) {
-        engine.stopTimer(PUSH2T._recordBlinkTimer);
-        PUSH2T._recordBlinkTimer = 0;
-    }
     PUSH2T.clearAllPads();
     // Clear CC button LEDs (incl. SHIFT 0x31, DELETE 0x76, RECORD 0x56)
     [0x14,0x15,0x16,0x18,0x19,0x1A,0x31,0x55,0x56,0x69,0x6D,0x76].forEach(function(cc) {
@@ -180,14 +176,11 @@ PUSH2T.safeConnect = function (group, key, callback) {
 PUSH2T.connectDeck = function (group, side) {
     var P = PUSH2T.PAD;
 
-    // ── Play indicator (blinking when playing) ──
+    // ── Play indicator (static color: bright green playing, dim when stopped) ──
     PUSH2T.safeConnect(group, 'play_indicator', function (v) {
         var pad = (side === 'A') ? P.playA : P.playB;
-        if (v > 0) {
-            midi.sendShortMsg(PUSH2T.PAD_BLINK, pad, PUSH2T.C.green);
-        } else {
-            midi.sendShortMsg(PUSH2T.PAD_STATIC, pad, PUSH2T.C.darkgreen);
-        }
+        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
+            v ? PUSH2T.C.green : PUSH2T.C.darkgreen);
     });
 
     // ── CUP – lit orange when cue is set, gray when not ──
@@ -249,11 +242,7 @@ PUSH2T.connectDeck = function (group, side) {
         var color = v ? PUSH2T.C.green : PUSH2T.C.darkgreen;
         midi.sendShortMsg(PUSH2T.PAD_STATIC, lin,  color);
         midi.sendShortMsg(PUSH2T.PAD_STATIC, lout, color);
-        if (v > 0) {
-            midi.sendShortMsg(PUSH2T.PAD_BLINK, bls, PUSH2T.C.lime);
-        } else {
-            midi.sendShortMsg(PUSH2T.PAD_STATIC, bls, PUSH2T.C.gray);
-        }
+        midi.sendShortMsg(PUSH2T.PAD_STATIC, bls, v ? PUSH2T.C.lime : PUSH2T.C.gray);
     });
 
     // ── VU meter ──
@@ -302,7 +291,7 @@ PUSH2T.drawStaticButtons = function () {
     // invisible on these, so idle uses a mid level (64) and held = full (127).
     midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.shift, 64);
     midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.del, 64);
-    // RECORD (CC86) – white when idle; blinking red while recording is
+    // RECORD (CC86) – white when idle; static red while recording is
     // driven by the [Recording] status connection below.
     midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.record, PUSH2T.C.white);
 
@@ -584,14 +573,12 @@ PUSH2T.beatloopDecA = function (c, t, v) {
     if (v > 0 && PUSH2T.blIdxA > 0) {
         PUSH2T.blIdxA--;
         PUSH2T._applyBeatloopSize('[Channel1]', PUSH2T.blIdxA, -1);
-        midi.sendShortMsg(PUSH2T.PAD_BLINK, PUSH2T.PAD.bldA, PUSH2T.C.orange);
     }
 };
 PUSH2T.beatloopIncA = function (c, t, v) {
     if (v > 0 && PUSH2T.blIdxA < PUSH2T.BL_SIZES.length - 1) {
         PUSH2T.blIdxA++;
         PUSH2T._applyBeatloopSize('[Channel1]', PUSH2T.blIdxA, 1);
-        midi.sendShortMsg(PUSH2T.PAD_BLINK, PUSH2T.PAD.bluA, PUSH2T.C.orange);
     }
 };
 // Toggle beatloop:
@@ -614,14 +601,12 @@ PUSH2T.beatloopDecB = function (c, t, v) {
     if (v > 0 && PUSH2T.blIdxB > 0) {
         PUSH2T.blIdxB--;
         PUSH2T._applyBeatloopSize('[Channel2]', PUSH2T.blIdxB, -1);
-        midi.sendShortMsg(PUSH2T.PAD_BLINK, PUSH2T.PAD.bldB, PUSH2T.C.orange);
     }
 };
 PUSH2T.beatloopIncB = function (c, t, v) {
     if (v > 0 && PUSH2T.blIdxB < PUSH2T.BL_SIZES.length - 1) {
         PUSH2T.blIdxB++;
         PUSH2T._applyBeatloopSize('[Channel2]', PUSH2T.blIdxB, 1);
-        midi.sendShortMsg(PUSH2T.PAD_BLINK, PUSH2T.PAD.bluB, PUSH2T.C.orange);
     }
 };
 PUSH2T.beatloopSetB = function (c, t, v) {

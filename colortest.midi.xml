@@ -1,0 +1,289 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+  colortest.midi.xml  –  Push 2 color palette tester for Mixxx
+  Script: colortest-script.js  (functionprefix: CTEST)
+
+  Lights all 64 pads with Push 2 palette colors.
+    Page 1 (default)      : palette indices 0..63
+    Page 2 (hold SHIFT)   : palette indices 64..127
+  SHIFT = CC49 (0x31). Pressing any pad prints its index to the log.
+
+  Pads are NoteOn Ch1 (0x90), notes 0x24..0x63 (8x8 grid, bottom-left=0x24).
+-->
+<MixxxControllerPreset schemaVersion="1" mixxxVersion="">
+    <info>
+        <name>Push 2 Color Test</name>
+        <author>diagnostic</author>
+        <description>Lights every pad with a palette color; SHIFT switches page. Requires colortest-script.js</description>
+    </info>
+    <controller id="Ableton Push 2">
+        <scriptfiles>
+            <file functionprefix="CTEST" filename="colortest-script.js"/>
+        </scriptfiles>
+        <controls>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x24</description>
+                <status>0x90</status><midino>0x24</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x25</description>
+                <status>0x90</status><midino>0x25</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x26</description>
+                <status>0x90</status><midino>0x26</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x27</description>
+                <status>0x90</status><midino>0x27</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x28</description>
+                <status>0x90</status><midino>0x28</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x29</description>
+                <status>0x90</status><midino>0x29</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x2A</description>
+                <status>0x90</status><midino>0x2A</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x2B</description>
+                <status>0x90</status><midino>0x2B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x2C</description>
+                <status>0x90</status><midino>0x2C</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x2D</description>
+                <status>0x90</status><midino>0x2D</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x2E</description>
+                <status>0x90</status><midino>0x2E</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x2F</description>
+                <status>0x90</status><midino>0x2F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x30</description>
+                <status>0x90</status><midino>0x30</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x31</description>
+                <status>0x90</status><midino>0x31</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x32</description>
+                <status>0x90</status><midino>0x32</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x33</description>
+                <status>0x90</status><midino>0x33</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x34</description>
+                <status>0x90</status><midino>0x34</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x35</description>
+                <status>0x90</status><midino>0x35</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x36</description>
+                <status>0x90</status><midino>0x36</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x37</description>
+                <status>0x90</status><midino>0x37</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x38</description>
+                <status>0x90</status><midino>0x38</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x39</description>
+                <status>0x90</status><midino>0x39</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x3A</description>
+                <status>0x90</status><midino>0x3A</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x3B</description>
+                <status>0x90</status><midino>0x3B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x3C</description>
+                <status>0x90</status><midino>0x3C</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x3D</description>
+                <status>0x90</status><midino>0x3D</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x3E</description>
+                <status>0x90</status><midino>0x3E</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x3F</description>
+                <status>0x90</status><midino>0x3F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x40</description>
+                <status>0x90</status><midino>0x40</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x41</description>
+                <status>0x90</status><midino>0x41</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x42</description>
+                <status>0x90</status><midino>0x42</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x43</description>
+                <status>0x90</status><midino>0x43</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x44</description>
+                <status>0x90</status><midino>0x44</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x45</description>
+                <status>0x90</status><midino>0x45</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x46</description>
+                <status>0x90</status><midino>0x46</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x47</description>
+                <status>0x90</status><midino>0x47</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x48</description>
+                <status>0x90</status><midino>0x48</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x49</description>
+                <status>0x90</status><midino>0x49</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x4A</description>
+                <status>0x90</status><midino>0x4A</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x4B</description>
+                <status>0x90</status><midino>0x4B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x4C</description>
+                <status>0x90</status><midino>0x4C</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x4D</description>
+                <status>0x90</status><midino>0x4D</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x4E</description>
+                <status>0x90</status><midino>0x4E</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x4F</description>
+                <status>0x90</status><midino>0x4F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x50</description>
+                <status>0x90</status><midino>0x50</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x51</description>
+                <status>0x90</status><midino>0x51</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x52</description>
+                <status>0x90</status><midino>0x52</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x53</description>
+                <status>0x90</status><midino>0x53</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x54</description>
+                <status>0x90</status><midino>0x54</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x55</description>
+                <status>0x90</status><midino>0x55</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x56</description>
+                <status>0x90</status><midino>0x56</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x57</description>
+                <status>0x90</status><midino>0x57</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x58</description>
+                <status>0x90</status><midino>0x58</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x59</description>
+                <status>0x90</status><midino>0x59</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x5A</description>
+                <status>0x90</status><midino>0x5A</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x5B</description>
+                <status>0x90</status><midino>0x5B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x5C</description>
+                <status>0x90</status><midino>0x5C</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x5D</description>
+                <status>0x90</status><midino>0x5D</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x5E</description>
+                <status>0x90</status><midino>0x5E</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x5F</description>
+                <status>0x90</status><midino>0x5F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x60</description>
+                <status>0x90</status><midino>0x60</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x61</description>
+                <status>0x90</status><midino>0x61</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x62</description>
+                <status>0x90</status><midino>0x62</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>CTEST.pad</key>
+                <description>Pad 0x63</description>
+                <status>0x90</status><midino>0x63</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>CTEST.shift</key>
+                <description>SHIFT page 2 – CC49 (0x31)</description>
+                <status>0xB0</status><midino>0x31</midino>
+                <options><script-binding/></options></control>
+
+        </controls>
+        <outputs/>
+    </controller>
+</MixxxControllerPreset>

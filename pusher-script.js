@@ -582,14 +582,19 @@ PUSH2T.beatloopIncA = function (c, t, v) {
     }
 };
 // Toggle beatloop:
-//   - Loop currently active -> turn it off (keeps points, but next press
-//     makes a NEW loop at the playhead).
+//   - Loop currently active -> remove it entirely (loop_remove, not
+//     reloop_toggle). reloop_toggle only DISABLES the loop but leaves its
+//     points cached, and Mixxx's beatloop_X_activate re-enables those same
+//     cached points instead of recomputing when the size matches -- so the
+//     next loop would silently reuse the OLD position instead of starting
+//     fresh at the playhead. loop_remove clears the points so the next
+//     activate is forced to compute a brand new loop at the current position.
 //   - Loop off -> always create a fresh beatloop of the current size at the
 //     current playhead position.
 PUSH2T.beatloopSetA = function (c, t, v) {
     if (v > 0) {
         if (engine.getValue('[Channel1]', 'loop_enabled')) {
-            engine.setValue('[Channel1]', 'reloop_toggle', 1);   // exit loop
+            engine.setValue('[Channel1]', 'loop_remove', 1);   // clear loop
         } else {
             var sz = PUSH2T.BL_SIZES[PUSH2T.blIdxA];
             engine.setValue('[Channel1]', 'beatloop_' + sz + '_activate', 1);
@@ -612,7 +617,7 @@ PUSH2T.beatloopIncB = function (c, t, v) {
 PUSH2T.beatloopSetB = function (c, t, v) {
     if (v > 0) {
         if (engine.getValue('[Channel2]', 'loop_enabled')) {
-            engine.setValue('[Channel2]', 'reloop_toggle', 1);   // exit loop
+            engine.setValue('[Channel2]', 'loop_remove', 1);   // clear loop
         } else {
             var sz = PUSH2T.BL_SIZES[PUSH2T.blIdxB];
             engine.setValue('[Channel2]', 'beatloop_' + sz + '_activate', 1);

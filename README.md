@@ -43,7 +43,7 @@ Cue and Sync pads were swapped on both decks: SYNC now sits inboard (closer to P
   - Deck **stopped** + touched → velocity-sensitive scratch (`JOG_SCRATCH_VEL = 2.0`).
   - Deck **playing** + touched → tempo bend, accumulates while turning, resets to set rate the instant you lift your finger (not on a timer).
   - Deck playing, NOT touched → no effect (bend requires touch).
-- **Beatloop set** — toggle: loop active → exits (keeps points); loop off → always creates a fresh loop of current size at the playhead (does not reuse old loop position).
+- **Beatloop set** — toggle: loop active → fully clears the loop (`loop_remove`, not `reloop_toggle`); loop off → always creates a fresh loop of current size at the playhead. (`reloop_toggle` only disables the loop but leaves its points cached — pressing `beatloop_X_activate` again with a matching size then just re-enables those stale points instead of computing a new one at the current playhead. `loop_remove` clears the cache so the next press is forced to start fresh. Fixed 2026-09-08 after observing the loop "stay" at its old position on re-press.)
 - **Beatloop size ± while a loop is ACTIVE** — uses `loop_scale` (0.5 / 2.0) exclusively, keeping the loop START fixed and moving only the end. (Earlier version double-applied `beatloop_size` + `loop_scale`, which shifted both points on the first press — fixed by only touching `beatloop_size` when no loop is running.)
 - **Beatjump (row 7, C6/D6 and E6/F#6)** — same size as current beatloop size.
 - **Loop In/Out (row 6)** — respects the deck's own QNT toggle for beat-snapping; script never forces or clears quantize.

@@ -19,10 +19,9 @@
 //    - Record (CC86) and Browse/Play (CC85) are full RGB — same 128-color
 //      palette as the pads, so they should visually match the pad exactly.
 //    - Shift, Delete, Load x6, Gain Reset x2 are monochrome white LEDs —
-//      they still take an index 0-127, but it runs through a separate
-//      white-calibration table in the firmware, not a literal brightness
-//      percentage, so the same index can look different from a pad's
-//      color. Worth eyeballing rather than assuming.
+//      confirmed on hardware: on/off with dimming only, no color variation.
+//      The mirrored index still gets sent (harmless), but only brightness
+//      is meaningful for these; don't bother picking a "color" for them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var CTEST = {};

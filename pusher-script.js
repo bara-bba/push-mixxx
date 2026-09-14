@@ -36,38 +36,51 @@ PUSH2T.PAD_STATIC  = 0x90;   // Note On Ch1   → static pad color
 PUSH2T.BTN_STATIC  = 0xB0;   // CC Ch1        → button static (not used for LEDs here)
 
 // ─── PUSH 2 COLOR PALETTE (6-bit index) ──────────────────────────────────────
+// Verified 2026-09-08 against photos of the full palette (docs/color-palette.md).
+// orange/yellow/darkgreen/lime/purple were re-pointed to photo-verified indices
+// in the correct color family (purple moved off the pale row 48-63 range onto a
+// saturated one so it reads as a real rainbow-hotcue color, not pale lavender);
+// gray/teal were left alone (photo mismatch there traced to camera pink-bias
+// and/or the currently-unused pale rows — see docs/color-palette.md).
 PUSH2T.C = {
     off        : 0,
     gray       : 1,
-    red        : 127,  // DJ "new red"  (colortest shift D#7)
-    orange     : 7,
-    yellow     : 8,
-    lime       : 18,   // hotcue set
-    green      : 126,  // DJ "new green" (colortest shift D7)
-    darkgreen  : 12,
+    red        : 127,  // photo-verified red    (colortest shift D#7)
+    orange     : 69,   // photo-verified orange  (colortest shift F2)
+    yellow     : 9,    // photo-verified yellow  (colortest A2)
+    lime       : 88,   // photo-verified lime    (colortest shift C4)
+    green      : 126,  // photo-verified green   (colortest shift D7)
+    darkgreen  : 86,   // photo-verified dark green (colortest shift A#3)
     teal       : 50,
-    blue       : 125,
-    purple     : 48,
-    white      : 122,
+    blue       : 125,  // photo-verified blue    (colortest shift C#7)
+    purple     : 107,  // photo-verified purple  (colortest shift G5)
+    white      : 122,  // photo-verified white   (colortest shift A#6)
     pink       : 57
 };
 
-// ─── DJ CONFIG COLORS (palette indices chosen via colortest) ──────────────────
+// ─── DJ CONFIG COLORS — Pioneer CDJ/DJM-style scheme ──────────────────────────
+// Cue = orange (industry standard, matches CDJ hot cue/memory cue orange).
+// Sync = blue (matches CDJ/DJM sync-engaged convention) instead of doubling up
+// on keylock's yellow, so each accent color means exactly one thing.
+// Hot cues 1-6 = fixed rainbow order (red, orange, yellow, green, blue, purple),
+// matching rekordbox's default multi-color hot cue palette — 6 clearly distinct
+// colors instead of the old scheme's near-duplicate pairs.
 PUSH2T.DJ = {
-    noteGreen : 126,  // "new green" (colortest shift D7)
-    noteRed   : 127,  // "new red"   (colortest shift D#7)
+    noteGreen : PUSH2T.C.green,
+    noteRed   : PUSH2T.C.red,
     cue       : 3,    // CUE / CUP        (colortest D#2)
-    syncOn    : 8,    // SYNC active      (colortest G#2)
+    syncOn    : PUSH2T.C.blue,
     syncOff   : 49,   // SYNC not active  (colortest C#6)
-    hc        : [21, 22, 23, 13, 14, 15]  // Cue 1..6 (A3,A#3,B3,C#3,D3,D#3)
+    hc        : [PUSH2T.C.red, PUSH2T.C.orange, PUSH2T.C.yellow,
+                 PUSH2T.C.green, PUSH2T.C.blue, PUSH2T.C.purple]  // Cue 1..6
 };
 
 // ─── BROWSE BUTTON (CC85) COLORS ──────────────────────────────────────────────
 // CC85 is Push 2's Play button (RGB). Change these to recolor the browse
 // button. Use any value from PUSH2T.C above (e.g. PUSH2T.C.blue), or a raw
 // 0-127 Push 2 palette index.
-PUSH2T.BROWSE_COLOR_OPEN   = 10;   // library maximized -> green
-PUSH2T.BROWSE_COLOR_CLOSED = 1;    // library normal    -> dim gray
+PUSH2T.BROWSE_COLOR_OPEN   = PUSH2T.C.green;   // library maximized -> bright green
+PUSH2T.BROWSE_COLOR_CLOSED = PUSH2T.C.white;   // library normal    -> bright white
 
 // ─── PAD NOTE ADDRESSES (0x90 status) ────────────────────────────────────────
 PUSH2T.PAD = {
@@ -591,13 +604,19 @@ PUSH2T.beatloopIncA = function (c, t, v) {
 //     activate is forced to compute a brand new loop at the current position.
 //   - Loop off -> always create a fresh beatloop of the current size at the
 //     current playhead position.
+//     IMPORTANT: use beatloop_size + the GENERIC beatloop_activate, not the
+//     fixed-size beatloop_<N>_activate. The fixed-size control anchors the
+//     loop BACKWARD (current position becomes the loop's END, so playback
+//     immediately jumps back to a point before where you pressed); the
+//     generic one anchors FORWARD (current position becomes the loop's
+//     START, matching the intended "loop from here" behavior).
 PUSH2T.beatloopSetA = function (c, t, v) {
     if (v > 0) {
         if (engine.getValue('[Channel1]', 'loop_enabled')) {
             engine.setValue('[Channel1]', 'loop_remove', 1);   // clear loop
         } else {
-            var sz = PUSH2T.BL_SIZES[PUSH2T.blIdxA];
-            engine.setValue('[Channel1]', 'beatloop_' + sz + '_activate', 1);
+            engine.setValue('[Channel1]', 'beatloop_size', PUSH2T.BL_SIZES[PUSH2T.blIdxA]);
+            engine.setValue('[Channel1]', 'beatloop_activate', 1);
         }
     }
 };
@@ -619,8 +638,8 @@ PUSH2T.beatloopSetB = function (c, t, v) {
         if (engine.getValue('[Channel2]', 'loop_enabled')) {
             engine.setValue('[Channel2]', 'loop_remove', 1);   // clear loop
         } else {
-            var sz = PUSH2T.BL_SIZES[PUSH2T.blIdxB];
-            engine.setValue('[Channel2]', 'beatloop_' + sz + '_activate', 1);
+            engine.setValue('[Channel2]', 'beatloop_size', PUSH2T.BL_SIZES[PUSH2T.blIdxB]);
+            engine.setValue('[Channel2]', 'beatloop_activate', 1);
         }
     }
 };

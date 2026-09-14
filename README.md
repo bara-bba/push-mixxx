@@ -56,15 +56,24 @@ Cue and Sync pads were swapped on both decks: SYNC now sits inboard (closer to P
 - **RECORD = CC86 (0x56)** — toggles Mixxx recording. Static white idle, static red while recording (no blink/heartbeat — removed per preference for plain colors).
 - Double-tap-to-reset-sync was removed; sync toggles instantly now that SHIFT+Sync handles the reset.
 
-## DJ colors (Push 2 palette indices, chosen via colortest)
+## DJ colors — Pioneer CDJ/DJM-style scheme (photo-verified 2026-09-08)
 
-Held in `PUSH2T.DJ`:
-- `noteGreen = 126`, `noteRed = 127` — repointed globally: `PUSH2T.C.green`/`C.red` now resolve to these, so play pad, loop pads, VU top segment, and beatloop-size buttons all use them.
-- `cue = 3` (CUP lit)
-- `syncOn = 8`, `syncOff = 49`
-- `hc = [21, 22, 23, 13, 14, 15]` — fixed per-slot hotcue colors, Cue 1–6 (NOT the track's own stored cue color).
+Held in `PUSH2T.DJ`, all pointing at named `PUSH2T.C.*` palette entries (see
+`docs/color-palette.md` for how each index was verified against real photos of the
+hardware palette):
+- `noteGreen`/`noteRed` = `C.green`/`C.red` — play pad, loop pads, VU top segment, and
+  beatloop-size buttons all use these.
+- `cue = 3` (orange, CUP lit) — matches the industry-standard CDJ/rekordbox cue color.
+- `syncOn = C.blue` (matches CDJ/DJM sync-engaged convention), `syncOff = 49` (dim).
+  Deliberately NOT yellow, so it doesn't double up with keylock's color.
+- `hc = [C.red, C.orange, C.yellow, C.green, C.blue, C.purple]` — fixed rainbow order
+  for Cue 1–6 (NOT the track's own stored cue color), matching rekordbox's default
+  multi-color hot cue palette. Six clearly distinct colors, replacing the old scheme's
+  near-duplicate pairs.
 
-Browse button (CC85, Push 2 Play button, RGB) — separate constants `BROWSE_COLOR_OPEN` (10, green) / `BROWSE_COLOR_CLOSED` (1, dim gray).
+Browse button (CC85, Push 2 Play button, RGB) — `BROWSE_COLOR_OPEN` = `C.green`
+(library maximized), `BROWSE_COLOR_CLOSED` = `C.white` (bright white, normal/idle).
+Record (CC86) unchanged: white idle, red while recording.
 
 ## Known issues / open items
 

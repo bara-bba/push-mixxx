@@ -170,11 +170,13 @@ PUSH2T.blIdxB   = 3;
 // show/edit the OFF ("not used") colors instead of the ON colors.
 // Edited values are printed to the Mixxx log as "[PUSH2T] COLORS ..." so they
 // can be baked into PUSH2T.SAVED below (scripts can't write files).
-PUSH2T.SAVED = {"P36":{"on":126,"off":86},"P38":{"on":3,"off":121},"P37":{"on":125,"off":99},"P44":{"on":21,"off":121},"P45":{"on":111,"off":121},"P46":{"on":48,"off":121},"P68":{"on":5,"off":0},"P69":{"on":69,"off":0},"P70":{"on":9,"off":0},"P60":{"on":126,"off":0},"P61":{"on":92,"off":0},"P62":{"on":125,"off":0},"P76":{"on":125,"off":121},"P78":{"on":125,"off":121},"P93":{"on":88,"off":121},"P85":{"on":69,"off":121},"P92":{"on":127,"off":0},"P94":{"on":127,"off":0},"P84":{"on":92,"off":0},"P86":{"on":69,"off":0},"P40":{"on":126,"off":86},"P42":{"on":3,"off":121},"P41":{"on":125,"off":99},"P48":{"on":24,"off":121},"P49":{"on":23,"off":121},"P50":{"on":22,"off":121},"P72":{"on":107,"off":0},"P73":{"on":21,"off":0},"P74":{"on":22,"off":0},"P64":{"on":23,"off":0},"P65":{"on":35,"off":0},"P66":{"on":115,"off":0},"P80":{"on":120,"off":121},"P82":{"on":120,"off":121},"P97":{"on":122,"off":121},"P89":{"on":122,"off":121},"P96":{"on":115,"off":0},"P98":{"on":109,"off":0},"P88":{"on":92,"off":0},"P90":{"on":69,"off":0},"C85":{"on":126,"off":122},"C86":{"on":127,"off":122},"C118":{"on":127,"off":64},"C20":{"on":64,"off":1},"C21":{"on":1,"off":0},"C22":{"on":1,"off":0},"C24":{"on":64,"off":1},"C25":{"on":1,"off":0},"C26":{"on":1,"off":0},"C105":{"on":64,"off":1},"C109":{"on":64,"off":1},"P43":{"on":10,"off":0},"P39":{"on":10,"off":0},"P51":{"on":10,"off":0},"P47":{"on":10,"off":0},"P59":{"on":10,"off":0},"P55":{"on":10,"off":0},"P67":{"on":10,"off":0},"P63":{"on":10,"off":0},"P75":{"on":10,"off":0},"P71":{"on":10,"off":0},"P83":{"on":8,"off":0},"P79":{"on":8,"off":0},"P91":{"on":3,"off":0},"P87":{"on":3,"off":0},"P99":{"on":2,"off":0},"P95":{"on":2,"off":0}};   // baked from log 
+PUSH2T.SAVED = {"P36":{"on":126,"off":86},"P38":{"on":3,"off":121},"P37":{"on":125,"off":99},"P44":{"on":10,"off":121},"P45":{"on":11,"off":121},"P46":{"on":32,"off":121},"P68":{"on":11,"off":0},"P69":{"on":32,"off":0},"P70":{"on":89,"off":0},"P60":{"on":89,"off":0},"P61":{"on":13,"off":0},"P62":{"on":11,"off":0},"P76":{"on":120,"off":121},"P78":{"on":120,"off":121},"P93":{"on":122,"off":121},"P85":{"on":122,"off":121},"P92":{"on":89,"off":0},"P94":{"on":11,"off":0},"P84":{"on":92,"off":0},"P86":{"on":69,"off":0},"P39":{"on":10,"off":0},"P47":{"on":10,"off":0},"P55":{"on":10,"off":0},"P63":{"on":10,"off":0},"P71":{"on":10,"off":0},"P79":{"on":8,"off":0},"P87":{"on":3,"off":0},"P95":{"on":2,"off":0},"P40":{"on":126,"off":86},"P42":{"on":3,"off":121},"P41":{"on":125,"off":99},"P48":{"on":24,"off":121},"P49":{"on":23,"off":121},"P50":{"on":22,"off":121},"P72":{"on":107,"off":0},"P73":{"on":21,"off":0},"P74":{"on":22,"off":0},"P64":{"on":23,"off":0},"P65":{"on":35,"off":0},"P66":{"on":115,"off":0},"P80":{"on":120,"off":121},"P82":{"on":120,"off":121},"P97":{"on":122,"off":121},"P89":{"on":122,"off":121},"P96":{"on":115,"off":0},"P98":{"on":109,"off":0},"P88":{"on":92,"off":0},"P90":{"on":69,"off":0},"P43":{"on":10,"off":0},"P51":{"on":10,"off":0},"P59":{"on":10,"off":0},"P67":{"on":10,"off":0},"P75":{"on":10,"off":0},"P83":{"on":8,"off":0},"P91":{"on":3,"off":0},"P99":{"on":2,"off":0},"C85":{"on":126,"off":122},"C86":{"on":127,"off":122},"C118":{"on":127,"off":64},"C20":{"on":64,"off":1},"C21":{"on":13,"off":0},"C22":{"on":12,"off":0},"C24":{"on":64,"off":1},"C25":{"on":115,"off":0},"C26":{"on":107,"off":0},"C105":{"on":64,"off":1},"C109":{"on":64,"off":1}};   // baked from log 
 
 PUSH2T.slots = {};
 PUSH2T.colorMode = false;
 PUSH2T.selSlot = null;      // currently selected slot key in color mode
+PUSH2T.dupSource = null;    // {value} copied by the Duplicate button, or null
+PUSH2T.dupArmed = false;    // Duplicate active: next pad = source, then pads = destinations
 PUSH2T.selState = 'on';
 
 PUSH2T.buildSlots = function () {
@@ -208,6 +210,7 @@ PUSH2T.buildSlots = function () {
     def('C118', 127, 64);              // delete: on = held
     def('C20', 64, 1);  def('C21', 1, 0);  def('C22', 1, 0);   // load / prev / next A
     def('C24', 64, 1);  def('C25', 1, 0);  def('C26', 1, 0);   // load / prev / next B
+    def('C23', C.orange, C.paleWhite); def('C27', C.orange, C.paleWhite);   // deck-select A / B
     def('C105', 64, 1); def('C109', 64, 1);                    // gain reset A / B
     for (var k in PUSH2T.SAVED) {
         if (PUSH2T.slots[k]) {
@@ -281,7 +284,7 @@ PUSH2T.shutdown = function () {
     if (engine.isScratching(2)) { engine.scratchDisable(2); }
     PUSH2T.clearAllPads();
     // Clear CC button LEDs (incl. SHIFT 0x31, DELETE 0x76, RECORD 0x56)
-    [0x14,0x15,0x16,0x18,0x19,0x1A,0x30,0x31,0x55,0x56,0x69,0x6D,0x76].forEach(function(cc) {
+    [0x14,0x15,0x16,0x18,0x19,0x1A,0x03,0x09,0x17,0x1B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x55,0x56,0x58,0x69,0x6D,0x76].forEach(function(cc) {
         midi.sendShortMsg(0xB0, cc, 0);
     });
     print('[PUSH2T] Push 2 Pusher mapping shut down.');
@@ -417,6 +420,99 @@ PUSH2T.drawBeatgrid = function () {
     });
 };
 
+// ─── DECK SELECT (CC23 = Deck A, CC27 = Deck B; the spare 4th button of each
+// Load bank). SHIFT + press selects that deck (orange) and deselects the
+// other (exclusive). A press WITHOUT shift on either releases everything.
+// Default: none selected. PUSH2T.selectedDeck is 'A', 'B' or null, and
+// PUSH2T.selectedGroup() gives '[Channel1]' / '[Channel2]' / null, for
+// single-deck functions to build on.
+PUSH2T.selectedDeck = null;
+PUSH2T.selectedGroup = function () {
+    return PUSH2T.selectedDeck === 'A' ? '[Channel1]'
+         : PUSH2T.selectedDeck === 'B' ? '[Channel2]' : null;
+};
+PUSH2T.drawDeckSelect = function () {
+    PUSH2T.setCC(0x17, PUSH2T.selectedDeck === 'A' ? PUSH2T.slots['C23'].on : PUSH2T.slots['C23'].off);
+    PUSH2T.setCC(0x1B, PUSH2T.selectedDeck === 'B' ? PUSH2T.slots['C27'].on : PUSH2T.slots['C27'].off);
+};
+PUSH2T._deckSelect = function (side, v) {
+    if (v <= 0) { return; }
+    PUSH2T.selectedDeck = PUSH2T.shiftActive ? side : null;
+    PUSH2T.drawDeckSelect();
+    print('[PUSH2T] selected deck: ' + (PUSH2T.selectedDeck || 'none'));
+};
+PUSH2T.deckSelA = function (c, t, v) { PUSH2T._deckSelect('A', v); };
+PUSH2T.deckSelB = function (c, t, v) { PUSH2T._deckSelect('B', v); };
+
+// ─── TAP TEMPO (Push 2 Tap Tempo button, CC3, top-left) ──────────────────────
+// Only acts when a deck is selected (see deck select above). Tap in time: the
+// deck's BPM is set to the tapped tempo (averaged over the last taps) via the
+// deck's `bpm` control, whether or not the deck is playing. A pause longer
+// than TAP_RESET_MS starts a new tap sequence.
+PUSH2T.TAP_RESET_MS = 2000;
+PUSH2T.TAP_MAX_INTERVALS = 8;
+PUSH2T._taps = [];
+
+PUSH2T.tapTempo = function (c, t, v) {
+    if (v <= 0 || PUSH2T.colorMode) { return; }
+    var group = PUSH2T.selectedGroup();
+    print('[PUSH2T] tap pressed, selected deck: ' + (PUSH2T.selectedDeck || 'none'));
+    if (group === null) { return; }                    // no deck selected
+    var now = Date.now();
+    var taps = PUSH2T._taps;
+    if (taps.length && now - taps[taps.length - 1] > PUSH2T.TAP_RESET_MS) { taps.length = 0; }
+    taps.push(now);
+    if (taps.length > PUSH2T.TAP_MAX_INTERVALS + 1) { taps.shift(); }
+    if (taps.length < 2) { return; }
+    var avgMs = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+    var bpm = 60000 / avgMs;
+    engine.setValue(group, 'bpm', bpm);
+    print('[PUSH2T] tap tempo (bpm control now ' + engine.getValue(group, 'bpm').toFixed(1) + ') ' + bpm.toFixed(1) + ' BPM -> ' + group);
+};
+
+// ─── PITCH STRIP + METRONOME (selected deck only) ────────────────────────────
+// METRONOME (CC9): cycles the selected deck's pitch range (`rateRange`).
+// TOUCH STRIP: while touched, its absolute position sets the selected deck's
+// `rate` across the current range (top = faster, bottom = slower, middle =
+// 0%). The strip springs back to center on release; those return messages are
+// ignored, so the pitch stays where you left it.
+PUSH2T.RATE_RANGES = [0.06, 0.08, 0.10, 0.16, 0.24, 0.50, 0.90];
+PUSH2T.stripTouching = false;
+
+PUSH2T.metronomeBtn = function (c, t, v) {
+    if (v <= 0 || PUSH2T.colorMode) { return; }
+    var group = PUSH2T.selectedGroup();
+    if (group === null) { return; }
+    var cur = engine.getValue(group, 'rateRange');
+    var idx = 0, best = 1e9;
+    for (var i = 0; i < PUSH2T.RATE_RANGES.length; i++) {     // nearest current
+        var d = Math.abs(PUSH2T.RATE_RANGES[i] - cur);
+        if (d < best) { best = d; idx = i; }
+    }
+    var next = PUSH2T.RATE_RANGES[(idx + 1) % PUSH2T.RATE_RANGES.length];
+    engine.setValue(group, 'rateRange', next);
+    print('[PUSH2T] pitch range ' + group + ' = +/-' + Math.round(next * 100) + '%');
+};
+
+PUSH2T.stripTouch = function (c, t, v, status) {
+    PUSH2T.stripTouching = ((status & 0xF0) === 0x90) && v > 0;
+};
+
+PUSH2T.stripPitch = function (c, t, v) {
+    if (PUSH2T.colorMode || !PUSH2T.stripTouching) { return; }
+    var group = PUSH2T.selectedGroup();
+    if (group === null) { return; }
+    // Pitch bend arrives as (LSB, MSB); some Mixxx paths pass it pre-combined.
+    var v14 = (v > 127) ? v : ((v << 7) | (t & 0x7F));
+    // The strip springs back to exactly center (8192) on release, and that
+    // message can arrive before the touch-off note. Ignore exact center so the
+    // pitch stays where you left it (cost: you can't pick exactly 0% by hand).
+    if (v14 === 8192) { return; }
+    print('[PUSH2T] strip ' + v14);
+    var pos = (v14 - 8192) / 8192;               // -1 .. +1
+    engine.setValue(group, 'rate', Math.max(-1, Math.min(1, pos)));
+};
+
 PUSH2T.drawStaticColors = function () {
     var P = PUSH2T.PAD;
     // SHIFT has no color slot: dim white idle (64), full (127) when held.
@@ -431,10 +527,48 @@ PUSH2T.drawStaticColors = function () {
         PUSH2T.drawBeatgrid();
 
     });
+    // Arrow buttons (browser navigation) – dim idle level
+    [0x2C, 0x2D, 0x2E, 0x2F].forEach(function (cc) { PUSH2T.setCC(cc, 64); });
+    PUSH2T.setCC(0x03, 64);
+    PUSH2T.setCC(0x09, 64);                                   // METRONOME idle                                   // TAP TEMPO idle
+    PUSH2T.drawDeckSelect();
     // Load / prev / next (static, always mapped)
     [0x14, 0x15, 0x16, 0x18, 0x19, 0x1A].forEach(function (cc) {
         PUSH2T.setCC(cc, PUSH2T.slots['C' + cc].on);
     });
+};
+
+// Gain Reset button color from the deck's pregain (1.0 = 0 dB): white at unity,
+// greener the further BELOW 0 dB, redder the further ABOVE. (If these buttons
+// turn out to be white-only LEDs on your unit this just shows as brightness.)
+PUSH2T.GAIN_RAMP = [    // palette indices, dark green -> green -> yellow -> orange -> red
+    86, 87, 85, 84, 82, 81, 9, 79, 69, 75, 68, 127
+];
+PUSH2T.GAIN_DB_MIN = -12;   // dB mapped to the first ramp entry
+PUSH2T.GAIN_DB_MAX = 12;    // dB mapped to the last ramp entry
+PUSH2T.GAIN_UNITY_DB = 0.15;    // within this of 0 dB the button shows white
+PUSH2T.gainColor = function (gain) {
+    var db = (gain > 0.0001) ? 20 * Math.log(gain) / Math.LN10 : PUSH2T.GAIN_DB_MIN;
+    if (Math.abs(db) < PUSH2T.GAIN_UNITY_DB) { return PUSH2T.C.white; }
+    var t = (db - PUSH2T.GAIN_DB_MIN) / (PUSH2T.GAIN_DB_MAX - PUSH2T.GAIN_DB_MIN);
+    t = Math.max(0, Math.min(1, t));
+    return PUSH2T.GAIN_RAMP[Math.round(t * (PUSH2T.GAIN_RAMP.length - 1))];
+};
+
+// Top row LEDs: library mode -> all 8 sort buttons lit; otherwise the Gain
+// Reset ones show gain color and the rest are off.
+PUSH2T.drawTopRow = function () {
+    if (PUSH2T.inLibraryMode()) {
+        [104, 105, 106, 107, 108, 109].forEach(function (cc) {
+            PUSH2T.setCC(cc, PUSH2T.C.white);
+        });
+        PUSH2T.setCC(103, 0);
+        PUSH2T.setCC(102, PUSH2T.previewPlaying() ? PUSH2T.C.green : PUSH2T.C.white);
+    } else {
+        [102, 103, 104, 106, 107, 108].forEach(function (cc) { PUSH2T.setCC(cc, 0); });
+        PUSH2T.setCC(0x69, PUSH2T.gainColor(engine.getValue('[Channel1]', 'pregain')));
+        PUSH2T.setCC(0x6D, PUSH2T.gainColor(engine.getValue('[Channel2]', 'pregain')));
+    }
 };
 
 PUSH2T.drawStaticButtons = function () {
@@ -444,14 +578,22 @@ PUSH2T.drawStaticButtons = function () {
     // CC85 is Push 2's Play button (RGB): value = palette index.
     PUSH2T.safeConnect('[Skin]', 'show_maximized_library', function (v) {
         PUSH2T.setCC(0x55, v ? PUSH2T.slots['C85'].on : PUSH2T.slots['C85'].off);
+        PUSH2T.drawTopRow();
+    });
+
+    // ── Preview play state -> CC102 LED (library mode only) ──
+    PUSH2T.safeConnect('[PreviewDeck1]', 'play', function (v) {
+        if (PUSH2T.inLibraryMode()) {
+            PUSH2T.setCC(102, v ? PUSH2T.C.green : PUSH2T.C.white);
+        }
     });
 
     // ── Gain Reset CC105 / CC109 – ON when gain != 0 dB, OFF at unity ──
     PUSH2T.safeConnect('[Channel1]', 'pregain', function (v) {
-        PUSH2T.setCC(0x69, Math.abs(v - 1.0) > 0.01 ? PUSH2T.slots['C105'].on : PUSH2T.slots['C105'].off);
+        if (!PUSH2T.inLibraryMode()) { PUSH2T.setCC(0x69, PUSH2T.gainColor(v)); }
     });
     PUSH2T.safeConnect('[Channel2]', 'pregain', function (v) {
-        PUSH2T.setCC(0x6D, Math.abs(v - 1.0) > 0.01 ? PUSH2T.slots['C109'].on : PUSH2T.slots['C109'].off);
+        if (!PUSH2T.inLibraryMode()) { PUSH2T.setCC(0x6D, PUSH2T.gainColor(v)); }
     });
 };
 
@@ -865,24 +1007,28 @@ PUSH2T.loadB = function (c, t, v) {
 };
 PUSH2T.loadPrevA = function (c, t, v) {
     if (v > 0) {
+        PUSH2T.previewDirty = true;
         engine.setValue('[Library]', 'MoveUp', 1);
         engine.setValue('[Channel1]', 'LoadSelectedTrack', 1);
     }
 };
 PUSH2T.loadNextA = function (c, t, v) {
     if (v > 0) {
+        PUSH2T.previewDirty = true;
         engine.setValue('[Library]', 'MoveDown', 1);
         engine.setValue('[Channel1]', 'LoadSelectedTrack', 1);
     }
 };
 PUSH2T.loadPrevB = function (c, t, v) {
     if (v > 0) {
+        PUSH2T.previewDirty = true;
         engine.setValue('[Library]', 'MoveUp', 1);
         engine.setValue('[Channel2]', 'LoadSelectedTrack', 1);
     }
 };
 PUSH2T.loadNextB = function (c, t, v) {
     if (v > 0) {
+        PUSH2T.previewDirty = true;
         engine.setValue('[Library]', 'MoveDown', 1);
         engine.setValue('[Channel2]', 'LoadSelectedTrack', 1);
     }
@@ -1011,8 +1157,88 @@ PUSH2T.masterVol = function (c, t, v) {
         Math.max(0, Math.min(5, engine.getValue('[Master]', 'volume') + d)));
 };
 
-PUSH2T.gainResetA = function (c, t, v) { if (v > 0) engine.setValue('[Channel1]', 'pregain', 1.0); };
-PUSH2T.gainResetB = function (c, t, v) { if (v > 0) engine.setValue('[Channel2]', 'pregain', 1.0); };
+// ──── TOP ROW (CC102-109): library SORT in library mode, else normal ─────────
+// In library mode (library maximized via the Play/browse button, CC85) each
+// top-row button sorts the track table by a column; pressing the same one
+// again flips ascending/descending (Mixxx's sort_column_toggle). Outside
+// library mode CC105/CC109 are the Gain Reset buttons and the rest do nothing.
+// Values are Mixxx's TrackModel::SortColumnId (verified against Mixxx main;
+// this mapping was written for Mixxx 2.5.6 — tell me if a column looks off).
+PUSH2T.SORT_COLUMNS = {
+    104: 2,    // Title
+    105: 1,    // Artist
+    106: 3,    // Album
+    107: 15,   // BPM
+    108: 20,   // Key
+    109: 13    // Duration
+};
+PUSH2T.SORT_NAMES = { 104: 'Title', 105: 'Artist', 106: 'Album', 107: 'BPM',
+                      108: 'Key', 109: 'Duration' };
+// CC102 = preview play/pause, CC103 unused (see below).
+
+PUSH2T.inLibraryMode = function () {
+    return engine.getValue('[Skin]', 'show_maximized_library') ? true : false;
+};
+
+PUSH2T._sortBy = function (cc) {
+    engine.setValue('[Library]', 'sort_column_toggle', PUSH2T.SORT_COLUMNS[cc]);
+    print('[PUSH2T] library sort by ' + PUSH2T.SORT_NAMES[cc]);
+};
+
+// ── Preview deck (CC102 in library mode) ──
+// Play/pause of [PreviewDeck1]. If the library selection moved since the
+// preview was last started, a new press loads the selected track and plays it
+// from the start; otherwise a press on a paused preview just resumes.
+// While the preview is PLAYING, the Left/Right arrows seek it back/forward
+// PREVIEW_SEEK_SEC seconds instead of navigating the library.
+PUSH2T.PREVIEW_SEEK_SEC = 10;
+PUSH2T.previewDirty = true;      // selection moved since the preview was loaded
+
+PUSH2T.previewPlaying = function () {
+    return engine.getValue('[PreviewDeck1]', 'play') ? true : false;
+};
+
+PUSH2T.previewToggle = function () {
+    var pv = '[PreviewDeck1]';
+    if (PUSH2T.previewPlaying()) {
+        engine.setValue(pv, 'play', 0);                    // pause
+    } else if (engine.getValue(pv, 'track_loaded') && !PUSH2T.previewDirty) {
+        engine.setValue(pv, 'play', 1);                    // resume
+    } else {
+        engine.setValue(pv, 'LoadSelectedTrackAndPlay', 1);  // new track
+        PUSH2T.previewDirty = false;
+    }
+};
+
+PUSH2T.previewSeek = function (dir) {
+    var pv = '[PreviewDeck1]';
+    var dur = engine.getValue(pv, 'duration');
+    if (dur <= 0) { return; }
+    var pos = engine.getValue(pv, 'playposition') + dir * PUSH2T.PREVIEW_SEEK_SEC / dur;
+    engine.setValue(pv, 'playposition', Math.max(0, Math.min(1, pos)));
+};
+
+PUSH2T.top102 = function (c, t, v) {
+    if (v > 0 && PUSH2T.inLibraryMode()) { PUSH2T.previewToggle(); }
+};
+PUSH2T.top103 = function () {};       // free (kept bound so color mode can catch it)
+
+[104, 106, 107, 108].forEach(function (cc) {
+    PUSH2T['top' + cc] = function (c, t, v) {
+        if (v > 0 && PUSH2T.inLibraryMode()) { PUSH2T._sortBy(cc); }
+    };
+});
+
+PUSH2T.gainResetA = function (c, t, v) {
+    if (v <= 0) { return; }
+    if (PUSH2T.inLibraryMode()) { PUSH2T._sortBy(105); }
+    else { engine.setValue('[Channel1]', 'pregain', 1.0); }
+};
+PUSH2T.gainResetB = function (c, t, v) {
+    if (v <= 0) { return; }
+    if (PUSH2T.inLibraryMode()) { PUSH2T._sortBy(109); }
+    else { engine.setValue('[Channel2]', 'pregain', 1.0); }
+};
 
 // Number of MoveFocusForward steps to reach the track table from wherever
 // focus currently is. Depends on skin's widget order (search box, sidebar
@@ -1088,6 +1314,35 @@ PUSH2T.connectRecording = function () {
     });
 };
 
+// ──── ARROW BUTTONS (CC44 Left, CC45 Right, CC46 Up, CC47 Down) ────────────────
+// Up/Down move within whichever list has focus (tracks or sidebar folders/
+// playlists/crates). Left/Right switch focus sidebar <-> tracks;
+// SHIFT+Right opens the selected sidebar item. While the preview deck is
+// playing, Left/Right instead seek the preview.
+PUSH2T._arrow = function (key, v) {
+    if (v <= 0 || PUSH2T.colorMode) { return; }
+    // Preview playing: Left/Right seek the preview instead of navigating.
+    if (PUSH2T.previewPlaying && PUSH2T.previewPlaying()) {
+        if (key === 'MoveLeft')  { PUSH2T.previewSeek(-1); return; }
+        if (key === 'MoveRight') { PUSH2T.previewSeek(1);  return; }
+    }
+    if (key === 'MoveUp' || key === 'MoveDown') { PUSH2T.previewDirty = true; }
+    // Left/Right move keyboard FOCUS between the sidebar (folders/playlists/
+    // crates) and the track table, so Up/Down can then walk either list.
+    // SHIFT + Right opens/expands the selected sidebar item (GoToItem).
+    if (key === 'MoveLeft')  { engine.setValue('[Library]', 'MoveFocusBackward', 1); return; }
+    if (key === 'MoveRight') {
+        if (PUSH2T.shiftActive) { engine.setValue('[Library]', 'GoToItem', 1); }
+        else { engine.setValue('[Library]', 'MoveFocusForward', 1); }
+        return;
+    }
+    engine.setValue('[Library]', key, 1);
+};
+PUSH2T.arrowUp    = function (c, t, v) { PUSH2T._arrow('MoveUp', v); };
+PUSH2T.arrowDown  = function (c, t, v) { PUSH2T._arrow('MoveDown', v); };
+PUSH2T.arrowLeft  = function (c, t, v) { PUSH2T._arrow('MoveLeft', v); };
+PUSH2T.arrowRight = function (c, t, v) { PUSH2T._arrow('MoveRight', v); };
+
 // ──── BROWSE ENCODER (CC14) ───────────────────────────────────────────────────
 //
 // Push 2 sends this CC using "two's complement" relative encoding:
@@ -1109,6 +1364,7 @@ PUSH2T._decodeRelative = function (value) {
 PUSH2T.browseEncoder = function (c, t, v) {
     var amount = PUSH2T._decodeRelative(v);
     if (amount === 0) return;
+    PUSH2T.previewDirty = true;
 
     if (PUSH2T.shiftActive) {
         var steps = Math.min(Math.abs(amount), PUSH2T.SHIFT_NAV_MAX_STEPS);
@@ -1151,6 +1407,8 @@ PUSH2T.selectBtn = function (c, t, v) {
     if (!PUSH2T.colorMode) {
         PUSH2T.colorMode = true;
         PUSH2T.selSlot = null;
+        PUSH2T.dupArmed = false; PUSH2T.dupSource = null;
+        midi.sendShortMsg(0xB0, 0x58, 64);
         PUSH2T.clearAllPads();
         PUSH2T.renderColorMode();
         midi.sendShortMsg(0xB0, 0x30, 127);
@@ -1158,6 +1416,8 @@ PUSH2T.selectBtn = function (c, t, v) {
     } else {
         PUSH2T.colorMode = false;
         PUSH2T.selSlot = null;
+        PUSH2T.dupArmed = false; PUSH2T.dupSource = null;
+        midi.sendShortMsg(0xB0, 0x58, 0);
         PUSH2T.clearAllPads();
         PUSH2T.drawStaticColors();
         PUSH2T.conns.forEach(function (conn) { conn.trigger(); });
@@ -1166,14 +1426,40 @@ PUSH2T.selectBtn = function (c, t, v) {
     }
 };
 
+// DUPLICATE (CC88): in color-edit mode, press it, press a pad/button to copy
+// its color, then press other pads/buttons to give them the same color (ON or
+// OFF according to whether SHIFT is held). Press Duplicate again to finish.
+PUSH2T.duplicateBtn = function (c, t, v) {
+    if (v <= 0 || !PUSH2T.colorMode) { return; }
+    PUSH2T.dupArmed = !PUSH2T.dupArmed;
+    PUSH2T.dupSource = null;
+    midi.sendShortMsg(0xB0, 0x58, PUSH2T.dupArmed ? 127 : 64);
+    print('[PUSH2T] Duplicate ' + (PUSH2T.dupArmed ? 'armed: press the source pad' : 'off'));
+};
+
 // Called instead of the normal handler while in color-edit mode.
 PUSH2T._colorPress = function (status, ctrl, val) {
     var type = status & 0xF0;
     if (val <= 0 || type === 0x80) { return; }           // ignore releases
     var key = ((type === 0x90) ? 'P' : 'C') + ctrl;
     if (!PUSH2T.slots[key]) { return; }
-    PUSH2T.selSlot = key;
     PUSH2T.selState = PUSH2T.shiftActive ? 'off' : 'on';
+    if (PUSH2T.dupArmed) {
+        if (PUSH2T.dupSource === null) {
+            // First press while Duplicate is armed: copy this color.
+            PUSH2T.dupSource = PUSH2T.slots[key][PUSH2T.selState];
+            print('[PUSH2T] duplicate: copied ' + PUSH2T.dupSource + ' from ' + key);
+        } else {
+            // Following presses: paste the copied color here.
+            PUSH2T.slots[key][PUSH2T.selState] = PUSH2T.dupSource;
+            PUSH2T._rawSlot(key, PUSH2T.dupSource);
+            print('[PUSH2T] duplicate: ' + key + ' ' + PUSH2T.selState + ' = ' + PUSH2T.dupSource);
+            PUSH2T.dumpColors();
+        }
+        PUSH2T.selSlot = key;
+        return;
+    }
+    PUSH2T.selSlot = key;
     print('[PUSH2T] selected ' + key + ' (' + PUSH2T.selState + ') = ' +
           PUSH2T.slots[key][PUSH2T.selState]);
 };
@@ -1200,7 +1486,7 @@ PUSH2T.vuPad = function () {};
 // Wrap every button/pad handler so color-edit mode can intercept it. Done at
 // script load (not init) so the wrapped versions are what the XML resolves.
 (function () {
-    var names = ['vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
+    var names = ['metronomeBtn', 'tapTempo', 'deckSelA', 'deckSelB', 'top102', 'top103', 'top104', 'top106', 'top107', 'top108', 'vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
                  'loadPrevA', 'loadNextA', 'loadPrevB', 'loadNextB',
                  'gainResetA', 'gainResetB'];
     ['A', 'B'].forEach(function (s) {

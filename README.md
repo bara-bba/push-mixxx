@@ -81,6 +81,16 @@ into `PUSH2T.SAVED` to keep them. Handlers are wrapped at script load (end of fi
 color mode can intercept them; Load buttons and VU pads have script bindings in the XML
 for that reason.
 
+## Library mode, deck select, tap tempo, pitch strip
+
+- **Arrows (CC44-47)** — Up/Down walk the focused list (tracks or sidebar folders/playlists/crates). Left/Right move focus sidebar <-> tracks; SHIFT+Right opens the selected sidebar item. While the preview deck plays, Left/Right seek the preview instead (`PREVIEW_SEEK_SEC` = 10).
+- **Top row (CC102-109), library mode only** (library maximized via the Play/browse button): button 1 = preview play/pause (resumes if the selection didn't move, else loads the selected track), 2 = empty, 3-8 = sort by Title, Artist, Album, BPM, Key, Duration (`sort_column_toggle`, press again flips order; ids in `PUSH2T.SORT_COLUMNS`, written against Mixxx 2.5.6). Outside library mode CC105/CC109 are the Gain Reset buttons, colored green -> red by gain (`GAIN_RAMP`, white at 0 dB).
+- **Deck select (CC23 = A, CC27 = B)** — SHIFT+press selects that deck (orange, exclusive); a plain press releases all. Default none. `PUSH2T.selectedDeck` / `selectedGroup()` expose it.
+- **Tap tempo (CC3)** — with a deck selected, taps set that deck's `bpm` (average of last 8 intervals, 2 s reset), playing or stopped.
+- **Metronome (CC9)** — with a deck selected, cycles its `rateRange` (6/8/10/16/24/50/90%).
+- **Touch strip** — while touched (note 12) and a deck is selected, sets `rate` from the finger position across the current range. Exact-center pitch-bend (the spring-back on release) is ignored so the pitch stays put.
+- **Color-edit mode (SELECT CC48)** — Duplicate (CC88) copies one slot's color to others (press Duplicate, press source, press destinations).
+
 ## Known issues / open items
 
 - White-only CC buttons (Shift/Delete) needed brightness bumped from 1→64 to be visible; confirm they're actually lighting on hardware (last known: unconfirmed after the fix).

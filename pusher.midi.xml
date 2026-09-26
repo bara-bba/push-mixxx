@@ -207,6 +207,76 @@
                 <status>0xB0</status><midino>0x30</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.duplicateBtn</key>
+                <description>DUPLICATE – copy/paste colors in color-edit mode – CC88 (0x58)</description>
+                <status>0xB0</status><midino>0x58</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.top102</key>
+                <description>Top-row button CC102 (0x66) – sorts library column while in library mode</description>
+                <status>0xB0</status><midino>0x66</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.top103</key>
+                <description>Top-row button CC103 (0x67) – sorts library column while in library mode</description>
+                <status>0xB0</status><midino>0x67</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.top104</key>
+                <description>Top-row button CC104 (0x68) – sorts library column while in library mode</description>
+                <status>0xB0</status><midino>0x68</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.top106</key>
+                <description>Top-row button CC106 (0x6A) – sorts library column while in library mode</description>
+                <status>0xB0</status><midino>0x6A</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.top107</key>
+                <description>Top-row button CC107 (0x6B) – sorts library column while in library mode</description>
+                <status>0xB0</status><midino>0x6B</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.top108</key>
+                <description>Top-row button CC108 (0x6C) – sorts library column while in library mode</description>
+                <status>0xB0</status><midino>0x6C</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.deckSelA</key>
+                <description>Select Deck A (SHIFT + press; plain press releases) – CC23 (0x17)</description>
+                <status>0xB0</status><midino>0x17</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.deckSelB</key>
+                <description>Select Deck B (SHIFT + press; plain press releases) – CC27 (0x1B)</description>
+                <status>0xB0</status><midino>0x1B</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.tapTempo</key>
+                <description>Tap Tempo (top-left) – sets BPM of the selected deck – CC3 (0x03)</description>
+                <status>0xB0</status><midino>0x03</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.metronomeBtn</key>
+                <description>Metronome button – cycles pitch range of selected deck – CC9 (0x09)</description>
+                <status>0xB0</status><midino>0x09</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.stripTouch</key>
+                <description>Touch strip touch on – Note 12 (0x0C)</description>
+                <status>0x90</status><midino>0x0C</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.stripTouch</key>
+                <description>Touch strip touch off – Note 12 (0x0C)</description>
+                <status>0x80</status><midino>0x0C</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.stripPitch</key>
+                <description>Touch strip position (pitch bend) – adjusts pitch of selected deck</description>
+                <status>0xE0</status><midino>0x00</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.deleteBtn</key>
                 <description>DELETE (hold) – CC118 (0x76)</description>
                 <status>0xB0</status><midino>0x76</midino>
@@ -460,6 +530,26 @@
             <!-- ══════════════════════════════════════════════════════════
                  CC – BROWSE ENCODER + LIBRARY
                  ══════════════════════════════════════════════════════════ -->
+
+            <control><group></group><key>PUSH2T.arrowUp</key>
+                <description>Browser arrow Up – CC46 (0x2E)</description>
+                <status>0xB0</status><midino>0x2E</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.arrowDown</key>
+                <description>Browser arrow Down – CC47 (0x2F)</description>
+                <status>0xB0</status><midino>0x2F</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.arrowLeft</key>
+                <description>Browser arrow Left – CC44 (0x2C)</description>
+                <status>0xB0</status><midino>0x2C</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.arrowRight</key>
+                <description>Browser arrow Right – CC45 (0x2D)</description>
+                <status>0xB0</status><midino>0x2D</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.browseEncoder</key>
                 <description>Browse encoder – CC14 (0x0E). Normal: scroll tracks (MoveVertical). With SHIFT held: navigate library sidebar sections (MoveFocusForward/Backward).</description>

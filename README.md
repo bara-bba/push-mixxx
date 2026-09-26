@@ -4,7 +4,7 @@ status: active
 area: dj
 tags: [dj, mixxx, push2, midi-mapping]
 created: 2026-06-15
-updated: 2026-09-08
+updated: 2026-09-26
 ---
 
 # Push 2 → Mixxx Mapping (Pusher) — Snapshot
@@ -44,10 +44,13 @@ Cue and Sync pads were swapped on both decks: SYNC now sits inboard (closer to P
   - Deck **playing** + touched → tempo bend, accumulates while turning, resets to set rate the instant you lift your finger (not on a timer).
   - Deck playing, NOT touched → no effect (bend requires touch).
 - **Beatloop set** — toggle: loop active → fully clears the loop (`loop_remove`, not `reloop_toggle`); loop off → always creates a fresh loop of current size at the playhead. (`reloop_toggle` only disables the loop but leaves its points cached — pressing `beatloop_X_activate` again with a matching size then just re-enables those stale points instead of computing a new one at the current playhead. `loop_remove` clears the cache so the next press is forced to start fresh. Fixed 2026-09-08 after observing the loop "stay" at its old position on re-press.)
+- **Beatloop anchor (Start vs. End)** — `PUSH2T.init` now force-sets `loop_anchor` to `0` (Start) on both `[Channel1]`/`[Channel2]` every time the mapping loads. Root cause of loops setting the cursor as the loop's END instead of its START: not a script bug — Mixxx persists a per-deck `loop_anchor` control (`0` = Start/forward, `1` = End/backward) in `mixxx.cfg`, and the two decks driven by the Push 2 had it saved as `1` (likely flipped via the skin's own loop-anchor toggle at some point), while the unused decks 3/4 sat at the real default of `0`. Forcing it at init makes `beatloop_activate` deterministically forward regardless of what the GUI last left it at. Fixed 2026-09-26.
 - **Beatloop size ± while a loop is ACTIVE** — uses `loop_scale` (0.5 / 2.0) exclusively, keeping the loop START fixed and moving only the end. (Earlier version double-applied `beatloop_size` + `loop_scale`, which shifted both points on the first press — fixed by only touching `beatloop_size` when no loop is running.)
 - **Beatjump (row 7, C6/D6 and E6/F#6)** — same size as current beatloop size.
-- **Loop In/Out (row 6)** — respects the deck's own QNT toggle for beat-snapping; script never forces or clears quantize.
-- **VU meters** — columns 4 and 8, 8 segments bottom→top: 5 green, 1 yellow, 1 orange, 1 red (`PUSH2T.VU_COLORS`).
+- **Loop In/Out (row 6)** — respects the deck's own QNT toggle for beat-snapping; script never forces or clears quantize. Sent as a pulse (1 then 0): leaving `loop_in`/`loop_out` at 1 makes Mixxx treat it as held and the point follows the playhead. With no active loop a press sets the point; with an active loop a press does NOT move it — instead, **hold the pad and turn that deck's jog encoder to fine-tune** the point (5 ms per tick, `PUSH2T.LOOP_TUNE_MS`); needs the XML Note Off (0x80) bindings.
+- **Beatgrid pad (row 7 middle)** — only fires with SHIFT held (dim until then) to avoid accidentally moving the grid.
+- **Beatjump pads** — flash white while pressed; XML binds Note Off (0x80) too so they return to color on release.
+- **VU meters** — columns 4 and 8, 8 segments bottom→top: 5 deck-color (blue for A, red for B), 1 yellow, 1 orange, 1 red (`PUSH2T.vuColorsFor`).
 
 ## Modifiers (CC buttons, not pads)
 
@@ -56,24 +59,27 @@ Cue and Sync pads were swapped on both decks: SYNC now sits inboard (closer to P
 - **RECORD = CC86 (0x56)** — toggles Mixxx recording. Static white idle, static red while recording (no blink/heartbeat — removed per preference for plain colors).
 - Double-tap-to-reset-sync was removed; sync toggles instantly now that SHIFT+Sync handles the reset.
 
-## DJ colors — Pioneer CDJ/DJM-style scheme (photo-verified 2026-09-08)
+## DJ colors — Traktor-style scheme, user-tuned on hardware (2026-09-26)
 
-Held in `PUSH2T.DJ`, all pointing at named `PUSH2T.C.*` palette entries (see
-`docs/color-palette.md` for how each index was verified against real photos of the
-hardware palette):
-- `noteGreen`/`noteRed` = `C.green`/`C.red` — play pad, loop pads, VU top segment, and
-  beatloop-size buttons all use these.
-- `cue = 3` (orange, CUP lit) — matches the industry-standard CDJ/rekordbox cue color.
-- `syncOn = C.blue` (matches CDJ/DJM sync-engaged convention), `syncOff = 49` (dim).
-  Deliberately NOT yellow, so it doesn't double up with keylock's color.
-- `hc = [C.red, C.orange, C.yellow, C.green, C.blue, C.purple]` — fixed rainbow order
-  for Cue 1–6 (NOT the track's own stored cue color), matching rekordbox's default
-  multi-color hot cue palette. Six clearly distinct colors, replacing the old scheme's
-  near-duplicate pairs.
+Every pad / LED button has an ON and an OFF color, stored as "slots" (`PUSH2T.slots`,
+keys `P<note>` for pads and `C<cc>` for CC buttons). Defaults are built in
+`PUSH2T.buildSlots`; hardware-tuned values live in `PUSH2T.SAVED` (baked from the Mixxx
+log). Highlights: Play = green (pale green when stopped), Cue = orange (brighter while
+held, pale white with no cue), Sync = blue (mid blue when off), Slip/Keylock/Quantize =
+purple tints, hotcues 1-6 = Traktor-style red/orange/yellow/green/teal/blue, VU = green
+with yellow/orange/red top segments. Right deck's Play/Sync/Cue and all OFF colors mirror
+the left deck. Palette notes: `docs/color-palette.md`. Pale/inactive index guesses
+(`paleWhite`, `paleBlue`, `paleGreen`) were tuned by eye; `C.gray` (1) reads pink, avoid.
 
-Browse button (CC85, Push 2 Play button, RGB) — `BROWSE_COLOR_OPEN` = `C.green`
-(library maximized), `BROWSE_COLOR_CLOSED` = `C.white` (bright white, normal/idle).
-Record (CC86) unchanged: white idle, red while recording.
+### Color-edit mode (SELECT, CC48)
+
+SELECT toggles it. All pads/buttons (incl. VU segments) show their ON colors; hold SHIFT
+to show/edit OFF colors. Press a pad/button to select it (nothing else fires), turn the
+tempo encoder (CC14) to step its palette index. Every change prints
+`[PUSH2T] COLORS {...}` to the Mixxx log; scripts can't write files, so copy the values
+into `PUSH2T.SAVED` to keep them. Handlers are wrapped at script load (end of file) so
+color mode can intercept them; Load buttons and VU pads have script bindings in the XML
+for that reason.
 
 ## Known issues / open items
 

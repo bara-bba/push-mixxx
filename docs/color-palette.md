@@ -122,3 +122,34 @@ Pioneer CDJ/DJM convention instead of ad hoc picks:
 
 `DJ.noteGreen`/`noteRed` also switched from separate literal `126`/`127` to direct
 `C.green`/`C.red` references, so there's one source of truth for those two.
+
+## Round 3 (2026-09-26): Traktor-style redesign
+
+Requested switch from the rekordbox/CDJ-flavored scheme to Traktor's own color
+conventions, in two parts:
+
+- **Hotcue palette** — `DJ.hc` recolored to the first six swatches of Traktor
+  Pro's 8-color hotcue picker (red, orange, yellow, green, mint, blue, purple,
+  pink), in that order: `[C.red, C.orange, C.yellow, C.green, C.teal, C.blue]`.
+  `C.teal` (index 50) stands in for "mint" — it's one of the two indices never
+  re-verified on hardware directly (camera pink-bias explanation from Round 1,
+  see above), worth a glance next time the unit's out since it's now back in
+  active use instead of sitting unused in the pale row.
+- **Per-deck color coding** — new `PUSH2T.DECK = { A: C.blue, B: C.red }`,
+  matching Traktor's classic Deck A/B coloring (used since its multi-deck color
+  coding was introduced). Applied to the indicators that were previously
+  shared green/darkgreen between decks and only carried on/off state, not deck
+  identity:
+  - Play indicator: deck color when playing, `C.gray` when stopped (was
+    green/darkgreen for both decks).
+  - Loop In/Out: deck color when a loop is active, `C.gray` when not (was
+    green/darkgreen for both decks).
+  - VU meter bottom 5 segments: deck color instead of shared green (new
+    `PUSH2T.vuColorsFor(side)`, replacing the old shared `PUSH2T.VU_COLORS`
+    constant). The top 3 segments stay universal yellow/orange/red clip
+    warnings — those signal signal level, not deck identity, so they're
+    intentionally not deck-colored.
+  - Beatloop-size buttons (green/red, `DJ.noteGreen`/`noteRed`) and the
+    beatgrid/cue/sync/slip/keylock/quantize pads were left alone — they're
+    either shared action buttons or already carry a distinct semantic color
+    (cue=orange, sync=blue, etc.), not deck-identity indicators.

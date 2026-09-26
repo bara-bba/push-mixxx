@@ -44,35 +44,55 @@ PUSH2T.BTN_STATIC  = 0xB0;   // CC Ch1        → button static (not used for LE
 // and/or the currently-unused pale rows — see docs/color-palette.md).
 PUSH2T.C = {
     off        : 0,
-    gray       : 1,
+    gray       : 1,    // reads as pale PINK on hardware, not neutral gray — do
+                        // not use this for "inactive"; see `paleWhite` below.
     red        : 127,  // photo-verified red    (colortest shift D#7)
     orange     : 69,   // photo-verified orange  (colortest shift F2)
     yellow     : 9,    // photo-verified yellow  (colortest A2)
     lime       : 88,   // photo-verified lime    (colortest shift C4)
     green      : 126,  // photo-verified green   (colortest shift D7)
     darkgreen  : 86,   // photo-verified dark green (colortest shift A#3)
-    teal       : 50,
+    teal       : 92,   // saturated teal (page 2, row 4, col 5); old 50 was pale lavender
     blue       : 125,  // photo-verified blue    (colortest shift C#7)
     purple     : 107,  // photo-verified purple  (colortest shift G5)
     white      : 122,  // photo-verified white   (colortest shift A#6)
+    paleWhite  : 121,  // CANDIDATE pale white (118-124 ramp); 119 and 120 read bluish
+                        // brightness ramp seen in the colortest photos — not
+                        // independently verified on hardware yet (see
+                        // docs/color-palette.md); adjust if this reads wrong.
+    paleBlue   : 99,   // mid blue (page 2, row 5, col 4) — sync idle, distinct from active 125
+    paleGreen  : 86,   // dark green (page 2, row 3, col 7) — play idle, same hue family as active
     pink       : 57
 };
 
-// ─── DJ CONFIG COLORS — Pioneer CDJ/DJM-style scheme ──────────────────────────
-// Cue = orange (industry standard, matches CDJ hot cue/memory cue orange).
-// Sync = blue (matches CDJ/DJM sync-engaged convention) instead of doubling up
-// on keylock's yellow, so each accent color means exactly one thing.
-// Hot cues 1-6 = fixed rainbow order (red, orange, yellow, green, blue, purple),
-// matching rekordbox's default multi-color hot cue palette — 6 clearly distinct
-// colors instead of the old scheme's near-duplicate pairs.
+// ─── DJ CONFIG COLORS — Traktor-style scheme ──────────────────────────────────
+// Cue = orange (dim while just "set", brighter while actively held), sync =
+// pale blue idle / blue active — Traktor hardware (Kontrol S/D series) uses
+// the same orange/blue convention. Hot cues 1-6 = the first six swatches of
+// Traktor's own 8-color hotcue picker (red, orange, yellow, green, mint,
+// blue, purple, pink), in order. `C.teal` stands in for "mint".
 PUSH2T.DJ = {
-    noteGreen : PUSH2T.C.green,
-    noteRed   : PUSH2T.C.red,
-    cue       : 3,    // CUE / CUP        (colortest D#2)
-    syncOn    : PUSH2T.C.blue,
-    syncOff   : 49,   // SYNC not active  (colortest C#6)
-    hc        : [PUSH2T.C.red, PUSH2T.C.orange, PUSH2T.C.yellow,
-                 PUSH2T.C.green, PUSH2T.C.blue, PUSH2T.C.purple]  // Cue 1..6
+    noteGreen  : PUSH2T.C.green,
+    noteRed    : PUSH2T.C.red,
+    // Row 2 (Slip / Keylock / Quantize) active colors: three tints of purple
+    row2       : [21, 111, 48],   // slip 108 was too dim; 21 = page-1 purple (paler = brighter)
+    cue        : 3,                // cue set, idle — dim orange (colortest D#2)
+    cuePressed : PUSH2T.C.orange,  // CUP actively held — brighter orange
+    syncOn     : PUSH2T.C.blue,    // sync active
+    syncOff    : PUSH2T.C.paleBlue, // sync not active — pale/light blue
+    hc         : [PUSH2T.C.red, PUSH2T.C.orange, PUSH2T.C.yellow,
+                  PUSH2T.C.green, PUSH2T.C.teal, PUSH2T.C.blue]  // Cue 1..6
+};
+
+// ─── PER-DECK IDENTITY COLOR — Traktor's classic Deck A/B color coding ────────
+// Traktor has colored Deck A blue and Deck B red since its multi-deck color
+// coding was introduced, independent of any state. We reuse that here for
+// indicators that are otherwise just "on/off" for a given deck (play state,
+// loop-active, and the VU meter's normal range) so a glance at color alone
+// tells you which deck you're looking at, not just its play state.
+PUSH2T.DECK = {
+    A: PUSH2T.C.blue,
+    B: PUSH2T.C.red
 };
 
 // ─── BROWSE BUTTON (CC85) COLORS ──────────────────────────────────────────────
@@ -142,11 +162,109 @@ PUSH2T.BL_SIZES = [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64];
 PUSH2T.blIdxA   = 3;   // default index → 2 beats
 PUSH2T.blIdxB   = 3;
 
+// ─── COLOR SLOTS (every pad / LED button has an ON and an OFF color) ─────────
+// Key 'P<note>' = pad (Note On 0x90), 'C<cc>' = CC button (0xB0). Values are
+// Push 2 palette indices (for the white-only CC buttons: brightness 0-127).
+// SELECT (CC48) toggles COLOR-EDIT MODE (see bottom of file): press a pad/
+// button, turn the tempo encoder (CC14) to change its color. Hold SHIFT to
+// show/edit the OFF ("not used") colors instead of the ON colors.
+// Edited values are printed to the Mixxx log as "[PUSH2T] COLORS ..." so they
+// can be baked into PUSH2T.SAVED below (scripts can't write files).
+PUSH2T.SAVED = {"P36":{"on":126,"off":86},"P38":{"on":3,"off":121},"P37":{"on":125,"off":99},"P44":{"on":21,"off":121},"P45":{"on":111,"off":121},"P46":{"on":48,"off":121},"P68":{"on":5,"off":0},"P69":{"on":69,"off":0},"P70":{"on":9,"off":0},"P60":{"on":126,"off":0},"P61":{"on":92,"off":0},"P62":{"on":125,"off":0},"P76":{"on":125,"off":121},"P78":{"on":125,"off":121},"P93":{"on":88,"off":121},"P85":{"on":69,"off":121},"P92":{"on":127,"off":0},"P94":{"on":127,"off":0},"P84":{"on":92,"off":0},"P86":{"on":69,"off":0},"P40":{"on":126,"off":86},"P42":{"on":3,"off":121},"P41":{"on":125,"off":99},"P48":{"on":24,"off":121},"P49":{"on":23,"off":121},"P50":{"on":22,"off":121},"P72":{"on":107,"off":0},"P73":{"on":21,"off":0},"P74":{"on":22,"off":0},"P64":{"on":23,"off":0},"P65":{"on":35,"off":0},"P66":{"on":115,"off":0},"P80":{"on":120,"off":121},"P82":{"on":120,"off":121},"P97":{"on":122,"off":121},"P89":{"on":122,"off":121},"P96":{"on":115,"off":0},"P98":{"on":109,"off":0},"P88":{"on":92,"off":0},"P90":{"on":69,"off":0},"C85":{"on":126,"off":122},"C86":{"on":127,"off":122},"C118":{"on":127,"off":64},"C20":{"on":64,"off":1},"C21":{"on":1,"off":0},"C22":{"on":1,"off":0},"C24":{"on":64,"off":1},"C25":{"on":1,"off":0},"C26":{"on":1,"off":0},"C105":{"on":64,"off":1},"C109":{"on":64,"off":1},"P43":{"on":10,"off":0},"P39":{"on":10,"off":0},"P51":{"on":10,"off":0},"P47":{"on":10,"off":0},"P59":{"on":10,"off":0},"P55":{"on":10,"off":0},"P67":{"on":10,"off":0},"P63":{"on":10,"off":0},"P75":{"on":10,"off":0},"P71":{"on":10,"off":0},"P83":{"on":8,"off":0},"P79":{"on":8,"off":0},"P91":{"on":3,"off":0},"P87":{"on":3,"off":0},"P99":{"on":2,"off":0},"P95":{"on":2,"off":0}};   // baked from log 
+
+PUSH2T.slots = {};
+PUSH2T.colorMode = false;
+PUSH2T.selSlot = null;      // currently selected slot key in color mode
+PUSH2T.selState = 'on';
+
+PUSH2T.buildSlots = function () {
+    var P = PUSH2T.PAD, C = PUSH2T.C, DJ = PUSH2T.DJ;
+    function def(key, on, off) {
+        PUSH2T.slots[key] = { on: on, off: (off === undefined ? C.off : off) };
+    }
+    ['A', 'B'].forEach(function (s) {
+        def('P' + P['play' + s], C.green,  C.paleGreen);
+        def('P' + P['cue' + s],  DJ.cue,   C.paleWhite);
+        def('P' + P['sync' + s], DJ.syncOn, DJ.syncOff);
+        def('P' + P['slip' + s], DJ.row2[0], C.paleWhite);
+        def('P' + P['key' + s],  DJ.row2[1], C.paleWhite);
+        def('P' + P['qnt' + s],  DJ.row2[2], C.paleWhite);
+        for (var n = 1; n <= 6; n++) { def('P' + P['hc' + n + s], DJ.hc[n - 1], C.off); }
+        def('P' + P['lin' + s],  PUSH2T.DECK[s], C.paleWhite);
+        def('P' + P['lout' + s], PUSH2T.DECK[s], C.paleWhite);
+        def('P' + P['bls' + s],  C.lime, C.paleWhite);
+        def('P' + P['bgr' + s],  C.orange, C.paleWhite);   // ON only while SHIFT held
+        def('P' + P['bld' + s],  C.red, C.off);
+        def('P' + P['blu' + s],  C.red, C.off);
+        def('P' + P['bjb' + s],  C.teal, C.off);
+        def('P' + P['bjf' + s],  C.orange, C.off);
+        var vu = PUSH2T.vuColorsFor(s), cols = (s === 'A') ? PUSH2T.VU_A : PUSH2T.VU_B;
+        for (var i = 0; i < cols.length; i++) { def('P' + cols[i], vu[i], C.off); }
+    });
+    // CC buttons: RGB ones (browse 85, record 86) take palette indices; the
+    // rest are white-only (value = brightness).
+    def('C85', PUSH2T.BROWSE_COLOR_OPEN, PUSH2T.BROWSE_COLOR_CLOSED);
+    def('C86', C.red, C.white);        // record: on = recording
+    def('C118', 127, 64);              // delete: on = held
+    def('C20', 64, 1);  def('C21', 1, 0);  def('C22', 1, 0);   // load / prev / next A
+    def('C24', 64, 1);  def('C25', 1, 0);  def('C26', 1, 0);   // load / prev / next B
+    def('C105', 64, 1); def('C109', 64, 1);                    // gain reset A / B
+    for (var k in PUSH2T.SAVED) {
+        if (PUSH2T.slots[k]) {
+            if (PUSH2T.SAVED[k].on  !== undefined) { PUSH2T.slots[k].on  = PUSH2T.SAVED[k].on; }
+            if (PUSH2T.SAVED[k].off !== undefined) { PUSH2T.slots[k].off = PUSH2T.SAVED[k].off; }
+        }
+    }
+};
+
+// Color lookup for a pad note / CC number.
+PUSH2T.padOn  = function (note) { return PUSH2T.slots['P' + note].on; };
+PUSH2T.padOff = function (note) { return PUSH2T.slots['P' + note].off; };
+
+// LED writers used by all normal-mode feedback. Suppressed in color-edit mode
+// so live engine updates don't overwrite the color-edit display.
+PUSH2T.setPad = function (note, color) {
+    if (PUSH2T.colorMode) { return; }
+    midi.sendShortMsg(PUSH2T.PAD_STATIC, note, color);
+};
+PUSH2T.setCC = function (cc, value) {
+    if (PUSH2T.colorMode) { return; }
+    midi.sendShortMsg(0xB0, cc, value);
+};
+
+PUSH2T._rawSlot = function (key, color) {
+    midi.sendShortMsg(key.charAt(0) === 'P' ? 0x90 : 0xB0,
+                      parseInt(key.slice(1), 10), color);
+};
+
+// Draw every slot in its ON (or, with SHIFT held, OFF) color.
+PUSH2T.renderColorMode = function () {
+    var st = PUSH2T.shiftActive ? 'off' : 'on';
+    for (var key in PUSH2T.slots) { PUSH2T._rawSlot(key, PUSH2T.slots[key][st]); }
+};
+
+PUSH2T.dumpColors = function () {
+    var out = {};
+    for (var key in PUSH2T.slots) { out[key] = PUSH2T.slots[key]; }
+    print('[PUSH2T] COLORS ' + JSON.stringify(out));
+};
+
 // ─── INIT / SHUTDOWN ─────────────────────────────────────────────────────────
 
 PUSH2T.init = function (id, debugging) {
     try {
+        PUSH2T.buildSlots();
         PUSH2T.clearAllPads();
+        // Force Start-anchored beatloops on both decks (LoopAnchorPoint::Start = 0).
+        // Root cause of "loop sets the cursor as the END instead of the START":
+        // this isn't a script bug — Mixxx persists a per-deck loop_anchor flag
+        // (0 = Start/forward, 1 = End/backward), and mixxx.cfg had it saved as 1
+        // for Channel1/Channel2 (likely flipped via the skin's own loop-anchor
+        // toggle), while unused Channel3/4 sat at the real default of 0. Forcing
+        // it here every init makes beatloop_activate deterministically forward
+        // (current position = start) regardless of what the GUI last left it at.
+        engine.setValue('[Channel1]', 'loop_anchor', 0);
+        engine.setValue('[Channel2]', 'loop_anchor', 0);
         PUSH2T.connectDeck('[Channel1]', 'A');
         PUSH2T.connectDeck('[Channel2]', 'B');
         PUSH2T.connectRecording();
@@ -163,7 +281,7 @@ PUSH2T.shutdown = function () {
     if (engine.isScratching(2)) { engine.scratchDisable(2); }
     PUSH2T.clearAllPads();
     // Clear CC button LEDs (incl. SHIFT 0x31, DELETE 0x76, RECORD 0x56)
-    [0x14,0x15,0x16,0x18,0x19,0x1A,0x31,0x55,0x56,0x69,0x6D,0x76].forEach(function(cc) {
+    [0x14,0x15,0x16,0x18,0x19,0x1A,0x30,0x31,0x55,0x56,0x69,0x6D,0x76].forEach(function(cc) {
         midi.sendShortMsg(0xB0, cc, 0);
     });
     print('[PUSH2T] Push 2 Pusher mapping shut down.');
@@ -174,9 +292,11 @@ PUSH2T.shutdown = function () {
 // exist on this Mixxx version/skin. Calling .trigger() on null throws an
 // uncaught error, which can abort init() and disable the ENTIRE controller.
 // Always go through this helper instead of calling makeConnection directly.
+PUSH2T.conns = [];
 PUSH2T.safeConnect = function (group, key, callback) {
     var conn = engine.makeConnection(group, key, callback);
     if (conn) {
+        PUSH2T.conns.push(conn);
         conn.trigger();
     } else {
         print('[PUSH2T] WARNING: could not connect ' + group + ' ' + key + ' (control not found)');
@@ -188,74 +308,56 @@ PUSH2T.safeConnect = function (group, key, callback) {
 
 PUSH2T.connectDeck = function (group, side) {
     var P = PUSH2T.PAD;
+    function pd(name) { return P[name + side]; }   // pad note for this deck
 
-    // ── Play indicator (static color: bright green playing, dim when stopped) ──
+    // ── Play indicator (ON = playing, OFF = stopped) ──
     PUSH2T.safeConnect(group, 'play_indicator', function (v) {
-        var pad = (side === 'A') ? P.playA : P.playB;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-            v ? PUSH2T.C.green : PUSH2T.C.darkgreen);
+        PUSH2T.setPad(pd('play'), v ? PUSH2T.padOn(pd('play')) : PUSH2T.padOff(pd('play')));
     });
 
-    // ── CUP – lit orange when cue is set, gray when not ──
-    // cue_point = -1 when no cue is set, >= 0 (sample position) when set.
-    // track_loaded guards against false positives on empty decks.
+    // ── CUP – ON when a cue is set, OFF when not, DJ.cuePressed while held.
+    // cue_point = -1 when no cue is set; track_loaded guards empty decks.
+    // The held state is tracked separately (see cupA/cupB).
     PUSH2T.safeConnect(group, 'cue_point', function (v) {
-        var pad = (side === 'A') ? P.cueA : P.cueB;
-        var loaded = engine.getValue(group, 'track_loaded');
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-            (loaded && v >= 0) ? PUSH2T.DJ.cue : PUSH2T.C.gray);
+        PUSH2T.setPad(pd('cue'), PUSH2T._cueColor(group, side));
     });
 
     // ── Sync ──
     PUSH2T.safeConnect(group, 'sync_enabled', function (v) {
-        var pad = (side === 'A') ? P.syncA : P.syncB;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-            v ? PUSH2T.DJ.syncOn : PUSH2T.DJ.syncOff);
+        PUSH2T.setPad(pd('sync'), v ? PUSH2T.padOn(pd('sync')) : PUSH2T.padOff(pd('sync')));
     });
 
     // ── Slip mode ──
     PUSH2T.safeConnect(group, 'slip_enabled', function (v) {
-        var pad = (side === 'A') ? P.slipA : P.slipB;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-            v ? PUSH2T.C.purple : PUSH2T.C.gray);
+        PUSH2T.setPad(pd('slip'), v ? PUSH2T.padOn(pd('slip')) : PUSH2T.padOff(pd('slip')));
     });
 
     // ── Keylock ──
     PUSH2T.safeConnect(group, 'keylock', function (v) {
-        var pad = (side === 'A') ? P.keyA : P.keyB;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-            v ? PUSH2T.C.yellow : PUSH2T.C.gray);
+        PUSH2T.setPad(pd('key'), v ? PUSH2T.padOn(pd('key')) : PUSH2T.padOff(pd('key')));
     });
 
     // ── Quantize ──
     PUSH2T.safeConnect(group, 'quantize', function (v) {
-        var pad = (side === 'A') ? P.qntA : P.qntB;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-            v ? PUSH2T.C.teal : PUSH2T.C.gray);
+        PUSH2T.setPad(pd('qnt'), v ? PUSH2T.padOn(pd('qnt')) : PUSH2T.padOff(pd('qnt')));
     });
 
-    // ── Hotcues 1-6 (each slot has a fixed color from PUSH2T.DJ.hc) ──
-    var hcPads = (side === 'A')
-        ? [P.hc1A, P.hc2A, P.hc3A, P.hc4A, P.hc5A, P.hc6A]
-        : [P.hc1B, P.hc2B, P.hc3B, P.hc4B, P.hc5B, P.hc6B];
+    // ── Hotcues 1-6 (ON = cue set, OFF = empty) ──
     for (var n = 1; n <= 6; n++) {
-        (function (num, pad) {
+        (function (num) {
+            var pad = P['hc' + num + side];
             PUSH2T.safeConnect(group, 'hotcue_' + num + '_enabled', function (v) {
-                midi.sendShortMsg(PUSH2T.PAD_STATIC, pad,
-                    v ? PUSH2T.DJ.hc[num - 1] : PUSH2T.C.off);
+                PUSH2T.setPad(pad, v ? PUSH2T.padOn(pad) : PUSH2T.padOff(pad));
             });
-        })(n, hcPads[n - 1]);
+        })(n);
     }
 
-    // ── Loop active → lights Loop In/Out pads; beatjump pads stay static ──
+    // ── Loop active → Loop In/Out and loop-size pads (ON = loop active) ──
     PUSH2T.safeConnect(group, 'loop_enabled', function (v) {
-        var lin  = (side === 'A') ? P.linA  : P.linB;
-        var lout = (side === 'A') ? P.loutA : P.loutB;
-        var bls  = (side === 'A') ? P.blsA  : P.blsB;
-        var color = v ? PUSH2T.C.green : PUSH2T.C.darkgreen;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, lin,  color);
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, lout, color);
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, bls, v ? PUSH2T.C.lime : PUSH2T.C.gray);
+        ['lin', 'lout', 'bls'].forEach(function (name) {
+            var pad = pd(name);
+            PUSH2T.setPad(pad, v ? PUSH2T.padOn(pad) : PUSH2T.padOff(pad));
+        });
     });
 
     // ── VU meter ──
@@ -276,20 +378,25 @@ PUSH2T.connectDeck = function (group, side) {
 
 // ─── VU METER ────────────────────────────────────────────────────────────────
 
-// VU segment colors, bottom (0) to top (7): 5 green, 1 yellow, 1 orange, 1 red.
-PUSH2T.VU_COLORS = [
-    PUSH2T.C.green, PUSH2T.C.green, PUSH2T.C.green, PUSH2T.C.green, PUSH2T.C.green,
-    PUSH2T.C.yellow,
-    PUSH2T.C.orange,
-    PUSH2T.C.red
-];
+// VU segment colors, bottom (0) to top (7): 5 deck-color, 1 yellow, 1 orange,
+// 1 red. The bottom 5 use each deck's Traktor identity color (blue/red)
+// instead of a shared green, so the meter reads as "this deck" at a glance;
+// the top 3 stay universal yellow/orange/red clip warnings regardless of deck.
+PUSH2T.vuColorsFor = function (side) {
+    var deckColor = PUSH2T.C.green;   // shared green (deck-colored bottoms looked wrong)
+    return [
+        deckColor, deckColor, deckColor, deckColor, deckColor,
+        PUSH2T.C.yellow,
+        PUSH2T.C.orange,
+        PUSH2T.C.red
+    ];
+};
 
 PUSH2T.drawVu = function (side, value) {
     var col = (side === 'A') ? PUSH2T.VU_A : PUSH2T.VU_B;
     var lit = Math.round(value * col.length);
     for (var i = 0; i < col.length; i++) {
-        var c = (i < lit) ? PUSH2T.VU_COLORS[i] : PUSH2T.C.off;
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, col[i], c);
+        PUSH2T.setPad(col[i], (i < lit) ? PUSH2T.padOn(col[i]) : PUSH2T.padOff(col[i]));
     }
 };
 
@@ -298,56 +405,53 @@ PUSH2T.drawVu = function (side, value) {
 // Push 2 CC button LED:  midi.sendShortMsg(0xB0, ccNum, value)
 //   0 = off  |  1 = dim (quarter)  |  64 = medium  |  127 = full bright
 
+// Always-on pads and idle CC button LEDs. Safe to call repeatedly (used again
+// when leaving color-edit mode).
+// Beatgrid pads only do anything with SHIFT held, so they sit at their low
+// (OFF) color normally and light to their ON color while SHIFT is down.
+PUSH2T.drawBeatgrid = function () {
+    var P = PUSH2T.PAD;
+    ['A', 'B'].forEach(function (s) {
+        var pad = P['bgr' + s];
+        PUSH2T.setPad(pad, PUSH2T.shiftActive ? PUSH2T.padOn(pad) : PUSH2T.padOff(pad));
+    });
+};
+
+PUSH2T.drawStaticColors = function () {
+    var P = PUSH2T.PAD;
+    // SHIFT has no color slot: dim white idle (64), full (127) when held.
+    PUSH2T.setCC(PUSH2T.CC_BTN.shift, 64);
+    PUSH2T.setCC(0x30, 64);                                   // SELECT idle
+    PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].off);
+    PUSH2T.setCC(PUSH2T.CC_BTN.record, PUSH2T.slots['C86'].off);
+    ['A', 'B'].forEach(function (s) {
+        ['bld', 'blu', 'bjb', 'bjf'].forEach(function (name) {
+            PUSH2T.setPad(P[name + s], PUSH2T.padOn(P[name + s]));
+        });
+        PUSH2T.drawBeatgrid();
+
+    });
+    // Load / prev / next (static, always mapped)
+    [0x14, 0x15, 0x16, 0x18, 0x19, 0x1A].forEach(function (cc) {
+        PUSH2T.setCC(cc, PUSH2T.slots['C' + cc].on);
+    });
+};
+
 PUSH2T.drawStaticButtons = function () {
-    // SHIFT (CC49) and DELETE (CC118) modifier buttons.
-    // Push 2's white-only buttons need a clearly visible value; 1 is often
-    // invisible on these, so idle uses a mid level (64) and held = full (127).
-    midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.shift, 64);
-    midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.del, 64);
-    // RECORD (CC86) – white when idle; static red while recording is
-    // driven by the [Recording] status connection below.
-    midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.record, PUSH2T.C.white);
-
-    // Beatgrid (action – static orange, always on)
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bgrA, PUSH2T.C.orange);
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bgrB, PUSH2T.C.orange);
-    // Beatloop size ÷2 (dim red – action button)
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bldA, PUSH2T.C.red);
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bldB, PUSH2T.C.red);
-    // Beatloop size ×2 (dim red – action button)
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bluA, PUSH2T.C.red);
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bluB, PUSH2T.C.red);
-    // Beatjump back (teal ◀) and forward (orange ▶)
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjbA, PUSH2T.C.teal);
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjfA, PUSH2T.C.orange);
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjbB, PUSH2T.C.teal);
-    midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjfB, PUSH2T.C.orange);
-
-    // ── CC buttons: load / nav (static dim – always mapped) ──
-    // Deck A: CC20 Load  CC21 Prev  CC22 Next
-    midi.sendShortMsg(0xB0, 0x14, 64);   // Load A – medium
-    midi.sendShortMsg(0xB0, 0x15, 1);    // Load Prev A – dim
-    midi.sendShortMsg(0xB0, 0x16, 1);    // Load Next A – dim
-    // Deck B: CC24 Load  CC25 Prev  CC26 Next
-    midi.sendShortMsg(0xB0, 0x18, 64);   // Load B – medium
-    midi.sendShortMsg(0xB0, 0x19, 1);    // Load Prev B – dim
-    midi.sendShortMsg(0xB0, 0x1A, 1);    // Load Next B – dim
+    PUSH2T.drawStaticColors();
 
     // ── Browser toggle CC85 – reflects [Skin] show_maximized_library state ──
-    // CC85 is Push 2's Play button (RGB), so the value is a COLOR palette
-    // index, not just brightness. Change BROWSE_COLOR_* below to taste.
-    // (falls back gracefully if this control doesn't exist in your skin)
+    // CC85 is Push 2's Play button (RGB): value = palette index.
     PUSH2T.safeConnect('[Skin]', 'show_maximized_library', function (v) {
-        midi.sendShortMsg(0xB0, 0x55,
-            v ? PUSH2T.BROWSE_COLOR_OPEN : PUSH2T.BROWSE_COLOR_CLOSED);
+        PUSH2T.setCC(0x55, v ? PUSH2T.slots['C85'].on : PUSH2T.slots['C85'].off);
     });
 
-    // ── Gain Reset CC105 / CC109 – bright when gain ≠ 0 dB, dim at unity ──
+    // ── Gain Reset CC105 / CC109 – ON when gain != 0 dB, OFF at unity ──
     PUSH2T.safeConnect('[Channel1]', 'pregain', function (v) {
-        midi.sendShortMsg(0xB0, 0x69, Math.abs(v - 1.0) > 0.01 ? 64 : 1);
+        PUSH2T.setCC(0x69, Math.abs(v - 1.0) > 0.01 ? PUSH2T.slots['C105'].on : PUSH2T.slots['C105'].off);
     });
     PUSH2T.safeConnect('[Channel2]', 'pregain', function (v) {
-        midi.sendShortMsg(0xB0, 0x6D, Math.abs(v - 1.0) > 0.01 ? 64 : 1);
+        PUSH2T.setCC(0x6D, Math.abs(v - 1.0) > 0.01 ? PUSH2T.slots['C109'].on : PUSH2T.slots['C109'].off);
     });
 };
 
@@ -393,6 +497,13 @@ PUSH2T.playB = function (ch, ctrl, val) {
 PUSH2T.cupPreviewA = false;
 PUSH2T.cupPreviewB = false;
 
+// State flags: true while CUP is physically held down. Drives the
+// dim-orange (idle) vs brighter-orange (held) LED distinction — this isn't
+// something any engine control reports on its own, so we track it here and
+// push the LED directly on press/release (see cupA/cupB).
+PUSH2T.cupHeldA = false;
+PUSH2T.cupHeldB = false;
+
 // Tolerance (normalized 0..1 playposition) for "playhead is AT the cue point".
 // Tight enough that a deliberate jog nudge counts as "moved" (so CUP re-sets
 // the cue), but loose enough to reliably register a real cue hit after a
@@ -412,11 +523,24 @@ PUSH2T._playheadAtCue = function (group) {
     return Math.abs(playPos - cuePos) <= PUSH2T.CUE_AT_TOLERANCE;
 };
 
+// CUP LED color for the given deck: brighter orange while held, dim orange
+// once a cue is set (idle), pale white if no cue is set at all.
+PUSH2T._cueColor = function (group, side) {
+    var held = (side === 'A') ? PUSH2T.cupHeldA : PUSH2T.cupHeldB;
+    var pad = (side === 'A') ? PUSH2T.PAD.cueA : PUSH2T.PAD.cueB;
+    if (held) { return PUSH2T.DJ.cuePressed; }
+    var loaded = engine.getValue(group, 'track_loaded');
+    var cuePoint = engine.getValue(group, 'cue_point');
+    return (loaded && cuePoint >= 0) ? PUSH2T.padOn(pad) : PUSH2T.padOff(pad);
+};
+
 PUSH2T.cupA = function (ch, ctrl, val) {
     // CUP behavior, independent of Preferences > Decks > Cue mode.
     //   Playing            -> jump to cue and stop (release = no-op)
     //   Stopped, NOT at cue -> set a NEW cue at the cursor (replaces old one)
     //   Stopped, AT cue     -> preview-play from cue; release rolls back
+    PUSH2T.cupHeldA = val > 0;
+    PUSH2T.setPad(PUSH2T.PAD.cueA, PUSH2T._cueColor('[Channel1]', 'A'));
     if (val > 0) {
         if (engine.getValue('[Channel1]', 'play')) {
             engine.setValue('[Channel1]', 'cue_gotoandstop', 1);
@@ -437,6 +561,8 @@ PUSH2T.cupA = function (ch, ctrl, val) {
     }
 };
 PUSH2T.cupB = function (ch, ctrl, val) {
+    PUSH2T.cupHeldB = val > 0;
+    PUSH2T.setPad(PUSH2T.PAD.cueB, PUSH2T._cueColor('[Channel2]', 'B'));
     if (val > 0) {
         if (engine.getValue('[Channel2]', 'play')) {
             engine.setValue('[Channel2]', 'cue_gotoandstop', 1);
@@ -541,18 +667,61 @@ PUSH2T._releaseLoop = function (group) {
         engine.setValue(group, 'reloop_toggle', 1);
     }
 };
+// Fine-tune: while a Loop In / Loop Out pad is HELD, turning that deck's jog
+// encoder nudges the loop point (In or Out) instead of scratching/bending.
+// Each encoder tick moves it LOOP_TUNE_MS milliseconds. Release to finish.
+PUSH2T.LOOP_TUNE_MS = 5;
+PUSH2T._loopHeld = { '[Channel1]': null, '[Channel2]': null };   // 'in' | 'out' | null
+
+PUSH2T._loopTune = function (group, ticks) {
+    var which = PUSH2T._loopHeld[group];
+    var st = engine.getValue(group, 'loop_start_position');
+    var en = engine.getValue(group, 'loop_end_position');
+    if (st < 0 || en < 0) { return; }                  // no loop to tune
+    var dur = engine.getValue(group, 'duration');
+    var spm = dur > 0 ? engine.getValue(group, 'track_samples') / dur / 1000 : 88.2;
+    var mag = Math.max(2, Math.round(Math.abs(ticks) * PUSH2T.LOOP_TUNE_MS * spm / 2) * 2);
+    var step = (ticks < 0) ? -mag : mag;
+    var minLen = 2048;
+    if (which === 'in') {
+        var ns = st + step;
+        if (ns >= 0 && ns < en - minLen) { engine.setValue(group, 'loop_start_position', ns); }
+    } else {
+        var ne = en + step;
+        if (ne > st + minLen) { engine.setValue(group, 'loop_end_position', ne); }
+    }
+};
+
 PUSH2T._loopIn = function (group, v) {
     if (v > 0) {
         if (PUSH2T.deleteActive) { PUSH2T._releaseLoop(group); }
+        // Pulse (1 then 0) so Mixxx sees a tap, not a held button: while loop_in/
+        // loop_out stay 'pressed' on an active loop, the point follows the playhead.
         // loop_in respects the deck's quantize toggle: QNT on -> snaps to
         // the beat grid (no timing roll-back); QNT off -> lands exactly here.
-        else { engine.setValue(group, 'loop_in', 1); }
+        else {
+            // Active loop: a press must NOT move the point (that resized the
+            // loop) — it only arms fine-tuning. No active loop: set the IN.
+            if (!engine.getValue(group, 'loop_enabled')) {
+                engine.setValue(group, 'loop_in', 1); engine.setValue(group, 'loop_in', 0);
+            }
+            PUSH2T._loopHeld[group] = 'in';
+        }
+    } else if (PUSH2T._loopHeld[group] === 'in') {
+        PUSH2T._loopHeld[group] = null;
     }
 };
 PUSH2T._loopOut = function (group, v) {
     if (v > 0) {
         if (PUSH2T.deleteActive) { PUSH2T._releaseLoop(group); }
-        else { engine.setValue(group, 'loop_out', 1); }
+        else {
+            if (!engine.getValue(group, 'loop_enabled')) {
+                engine.setValue(group, 'loop_out', 1); engine.setValue(group, 'loop_out', 0);
+            }
+            PUSH2T._loopHeld[group] = 'out';
+        }
+    } else if (PUSH2T._loopHeld[group] === 'out') {
+        PUSH2T._loopHeld[group] = null;
     }
 };
 
@@ -561,11 +730,13 @@ PUSH2T.loopOutA = function (c, t, v) { PUSH2T._loopOut('[Channel1]', v); };
 PUSH2T.loopInB  = function (c, t, v) { PUSH2T._loopIn('[Channel2]', v); };
 PUSH2T.loopOutB = function (c, t, v) { PUSH2T._loopOut('[Channel2]', v); };
 
+// Beatgrid (move grid to playhead) only fires with SHIFT held, to avoid
+// accidental presses wrecking the grid.
 PUSH2T.beatgridA = function (c, t, v) {
-    if (v > 0) engine.setValue('[Channel1]', 'beats_translate_curpos', 1);
+    if (v > 0 && PUSH2T.shiftActive) engine.setValue('[Channel1]', 'beats_translate_curpos', 1);
 };
 PUSH2T.beatgridB = function (c, t, v) {
-    if (v > 0) engine.setValue('[Channel2]', 'beats_translate_curpos', 1);
+    if (v > 0 && PUSH2T.shiftActive) engine.setValue('[Channel2]', 'beats_translate_curpos', 1);
 };
 
 // ──── ROW 8: Beatloop size +/– and Set Beatloop ──────────────────────────────
@@ -651,41 +822,47 @@ PUSH2T.beatjumpBackA = function (c, t, v) {
     if (v > 0) {
         engine.setValue('[Channel1]', 'beatjump_size', PUSH2T.BL_SIZES[PUSH2T.blIdxA]);
         engine.setValue('[Channel1]', 'beatjump_backward', 1);
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjbA, PUSH2T.C.white);
+        PUSH2T.setPad(PUSH2T.PAD.bjbA, PUSH2T.C.white);
     } else {
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjbA, PUSH2T.C.teal);
+        PUSH2T.setPad(PUSH2T.PAD.bjbA, PUSH2T.padOn(PUSH2T.PAD.bjbA));
     }
 };
 PUSH2T.beatjumpFwdA = function (c, t, v) {
     if (v > 0) {
         engine.setValue('[Channel1]', 'beatjump_size', PUSH2T.BL_SIZES[PUSH2T.blIdxA]);
         engine.setValue('[Channel1]', 'beatjump_forward', 1);
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjfA, PUSH2T.C.white);
+        PUSH2T.setPad(PUSH2T.PAD.bjfA, PUSH2T.C.white);
     } else {
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjfA, PUSH2T.C.orange);
+        PUSH2T.setPad(PUSH2T.PAD.bjfA, PUSH2T.padOn(PUSH2T.PAD.bjfA));
     }
 };
 PUSH2T.beatjumpBackB = function (c, t, v) {
     if (v > 0) {
         engine.setValue('[Channel2]', 'beatjump_size', PUSH2T.BL_SIZES[PUSH2T.blIdxB]);
         engine.setValue('[Channel2]', 'beatjump_backward', 1);
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjbB, PUSH2T.C.white);
+        PUSH2T.setPad(PUSH2T.PAD.bjbB, PUSH2T.C.white);
     } else {
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjbB, PUSH2T.C.teal);
+        PUSH2T.setPad(PUSH2T.PAD.bjbB, PUSH2T.padOn(PUSH2T.PAD.bjbB));
     }
 };
 PUSH2T.beatjumpFwdB = function (c, t, v) {
     if (v > 0) {
         engine.setValue('[Channel2]', 'beatjump_size', PUSH2T.BL_SIZES[PUSH2T.blIdxB]);
         engine.setValue('[Channel2]', 'beatjump_forward', 1);
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjfB, PUSH2T.C.white);
+        PUSH2T.setPad(PUSH2T.PAD.bjfB, PUSH2T.C.white);
     } else {
-        midi.sendShortMsg(PUSH2T.PAD_STATIC, PUSH2T.PAD.bjfB, PUSH2T.C.orange);
+        PUSH2T.setPad(PUSH2T.PAD.bjfB, PUSH2T.padOn(PUSH2T.PAD.bjfB));
     }
 };
 
 // ──── CC: Load track / prev / next ───────────────────────────────────────────
 
+PUSH2T.loadA = function (c, t, v) {
+    if (v > 0) { engine.setValue('[Channel1]', 'LoadSelectedTrack', 1); }
+};
+PUSH2T.loadB = function (c, t, v) {
+    if (v > 0) { engine.setValue('[Channel2]', 'LoadSelectedTrack', 1); }
+};
 PUSH2T.loadPrevA = function (c, t, v) {
     if (v > 0) {
         engine.setValue('[Library]', 'MoveUp', 1);
@@ -784,6 +961,12 @@ PUSH2T._jogTurn = function (group, deckNum, value) {
     var delta = PUSH2T._jogDelta(value);
     if (delta === 0) return;
 
+    // Loop In/Out pad held: this turn fine-tunes the loop point instead.
+    if (PUSH2T._loopHeld[group]) {
+        PUSH2T._loopTune(group, delta);
+        return;
+    }
+
     if (PUSH2T._jogScratchActive[group] && engine.isScratching(deckNum)) {
         // Deck stopped + touched: velocity-sensitive scratch.
         engine.scratchTick(deckNum, delta * PUSH2T.JOG_SCRATCH_VEL);
@@ -868,6 +1051,9 @@ PUSH2T.shiftBtn = function (c, t, v) {
         // Visible idle level
         midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.shift, 64);
     }
+    // Color-edit mode: SHIFT swaps the display between ON and OFF colors.
+    if (PUSH2T.colorMode) { PUSH2T.renderColorMode(); }
+    else { PUSH2T.drawBeatgrid(); }
 };
 
 // ──── DELETE (global modifier, hold) ─────────────────────────────────────────
@@ -877,10 +1063,10 @@ PUSH2T.shiftBtn = function (c, t, v) {
 PUSH2T.deleteBtn = function (c, t, v) {
     if (v > 0) {
         PUSH2T.deleteActive = true;
-        midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.del, 127);   // bright while held
+        PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].on);   // held
     } else {
         PUSH2T.deleteActive = false;
-        midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.del, 64);    // visible idle
+        PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].off);    // idle
     }
 };
 
@@ -897,8 +1083,8 @@ PUSH2T.recordToggle = function (c, t, v) {
 PUSH2T.connectRecording = function () {
     PUSH2T.safeConnect('[Recording]', 'status', function (v) {
         // Plain static color: bright red while recording, white when idle.
-        midi.sendShortMsg(0xB0, PUSH2T.CC_BTN.record,
-            v ? PUSH2T.C.red : PUSH2T.C.white);
+        PUSH2T.setCC(PUSH2T.CC_BTN.record,
+            v ? PUSH2T.slots['C86'].on : PUSH2T.slots['C86'].off);
     });
 };
 
@@ -950,3 +1136,94 @@ PUSH2T.browseEncoder = function (c, t, v) {
 //  Set Beatloop: creates a loop of current size (shown by ÷2/×2 buttons).
 //  Load Prev/Next: moves library selection then immediately loads to deck.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ──── COLOR-EDIT MODE (SELECT CC48) ──────────────────────────────────────────
+// SELECT toggles the mode. Inside it:
+//   • every pad / LED button shows its ON color (SHIFT held: its OFF color)
+//   • pressing a pad/button selects it (nothing else fires)
+//   • turning the tempo encoder (CC14) steps that slot's palette index
+//     (SHIFT held at selection time edits the OFF color, otherwise ON)
+//   • each change prints "[PUSH2T] COLORS {...}" to the Mixxx log
+// Leaving the mode restores normal LED feedback.
+
+PUSH2T.selectBtn = function (c, t, v) {
+    if (v <= 0) { return; }
+    if (!PUSH2T.colorMode) {
+        PUSH2T.colorMode = true;
+        PUSH2T.selSlot = null;
+        PUSH2T.clearAllPads();
+        PUSH2T.renderColorMode();
+        midi.sendShortMsg(0xB0, 0x30, 127);
+        print('[PUSH2T] Color-edit mode ON');
+    } else {
+        PUSH2T.colorMode = false;
+        PUSH2T.selSlot = null;
+        PUSH2T.clearAllPads();
+        PUSH2T.drawStaticColors();
+        PUSH2T.conns.forEach(function (conn) { conn.trigger(); });
+        PUSH2T.dumpColors();
+        print('[PUSH2T] Color-edit mode OFF');
+    }
+};
+
+// Called instead of the normal handler while in color-edit mode.
+PUSH2T._colorPress = function (status, ctrl, val) {
+    var type = status & 0xF0;
+    if (val <= 0 || type === 0x80) { return; }           // ignore releases
+    var key = ((type === 0x90) ? 'P' : 'C') + ctrl;
+    if (!PUSH2T.slots[key]) { return; }
+    PUSH2T.selSlot = key;
+    PUSH2T.selState = PUSH2T.shiftActive ? 'off' : 'on';
+    print('[PUSH2T] selected ' + key + ' (' + PUSH2T.selState + ') = ' +
+          PUSH2T.slots[key][PUSH2T.selState]);
+};
+
+PUSH2T._colorTurn = function (amount) {
+    if (PUSH2T.selSlot === null) { return; }
+    var slot = PUSH2T.slots[PUSH2T.selSlot];
+    var v = slot[PUSH2T.selState] + (amount > 0 ? 1 : -1);
+    if (v < 0) { v = 0; }
+    if (v > 127) { v = 127; }
+    slot[PUSH2T.selState] = v;
+    // Show the change live if the selected state is what's on screen.
+    if ((PUSH2T.selState === 'off') === PUSH2T.shiftActive) {
+        PUSH2T._rawSlot(PUSH2T.selSlot, v);
+    }
+    print('[PUSH2T] ' + PUSH2T.selSlot + ' ' + PUSH2T.selState + ' = ' + v);
+    PUSH2T.dumpColors();
+};
+
+// VU pads have no normal-mode action; the binding exists only so color-edit
+// mode can select them.
+PUSH2T.vuPad = function () {};
+
+// Wrap every button/pad handler so color-edit mode can intercept it. Done at
+// script load (not init) so the wrapped versions are what the XML resolves.
+(function () {
+    var names = ['vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
+                 'loadPrevA', 'loadNextA', 'loadPrevB', 'loadNextB',
+                 'gainResetA', 'gainResetB'];
+    ['A', 'B'].forEach(function (s) {
+        ['play', 'cup', 'sync', 'slip', 'keylock', 'quantize', 'loopIn', 'loopOut',
+         'beatjumpBack', 'beatgrid', 'beatjumpFwd', 'beatloopDec', 'beatloopSet',
+         'beatloopInc'].forEach(function (n) { names.push(n + s); });
+        for (var i = 1; i <= 6; i++) { names.push('hc' + i + s); }
+    });
+    names.forEach(function (name) {
+        var orig = PUSH2T[name];
+        if (typeof orig !== 'function') { return; }
+        PUSH2T[name] = function (ch, ctrl, val, status, group) {
+            if (PUSH2T.colorMode) { PUSH2T._colorPress(status, ctrl, val); return; }
+            return orig.call(PUSH2T, ch, ctrl, val, status, group);
+        };
+    });
+    var origBrowse = PUSH2T.browseEncoder;
+    PUSH2T.browseEncoder = function (ch, ctrl, val, status, group) {
+        if (PUSH2T.colorMode) {
+            var amt = PUSH2T._decodeRelative(val);
+            if (amt !== 0) { PUSH2T._colorTurn(amt); }
+            return;
+        }
+        return origBrowse.call(PUSH2T, ch, ctrl, val, status, group);
+    };
+})();

@@ -131,9 +131,80 @@
                  DELETE held: hotcue press clears it; Loop In/Out releases loop.
                  ══════════════════════════════════════════════════════════ -->
 
+            <!-- VU pads: presses only matter in color-edit mode (select a segment) -->
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x27 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x27</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x2B (color-edit selection only)</description>
+                <status>0x90</status><midino>0x2B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x2F (color-edit selection only)</description>
+                <status>0x90</status><midino>0x2F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x33 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x33</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x37 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x37</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x3B (color-edit selection only)</description>
+                <status>0x90</status><midino>0x3B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x3F (color-edit selection only)</description>
+                <status>0x90</status><midino>0x3F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x43 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x43</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x47 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x47</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x4B (color-edit selection only)</description>
+                <status>0x90</status><midino>0x4B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x4F (color-edit selection only)</description>
+                <status>0x90</status><midino>0x4F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x53 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x53</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x57 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x57</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x5B (color-edit selection only)</description>
+                <status>0x90</status><midino>0x5B</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x5F (color-edit selection only)</description>
+                <status>0x90</status><midino>0x5F</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.vuPad</key>
+                <description>VU pad 0x63 (color-edit selection only)</description>
+                <status>0x90</status><midino>0x63</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.shiftBtn</key>
                 <description>SHIFT (hold) – CC49 (0x31)</description>
                 <status>0xB0</status><midino>0x31</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.selectBtn</key>
+                <description>SELECT – toggles color-edit mode – CC48 (0x30)</description>
+                <status>0xB0</status><midino>0x30</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.deleteBtn</key>
@@ -223,9 +294,19 @@
                 <status>0x90</status><midino>0x4C</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.loopInA</key>
+                <description>Loop In Deck A – E5 (0x4C) – release</description>
+                <status>0x80</status><midino>0x4C</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.loopOutA</key>
                 <description>Loop Out Deck A – F#5 (0x4E)</description>
                 <status>0x90</status><midino>0x4E</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.loopOutA</key>
+                <description>Loop Out Deck A – F#5 (0x4E) – release</description>
+                <status>0x80</status><midino>0x4E</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.loopInB</key>
@@ -233,9 +314,19 @@
                 <status>0x90</status><midino>0x50</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.loopInB</key>
+                <description>Loop In Deck B – G#5 (0x50) – release</description>
+                <status>0x80</status><midino>0x50</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.loopOutB</key>
                 <description>Loop Out Deck B – A#5 (0x52)</description>
                 <status>0x90</status><midino>0x52</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.loopOutB</key>
+                <description>Loop Out Deck B – A#5 (0x52) – release</description>
+                <status>0x80</status><midino>0x52</midino>
                 <options><script-binding/></options></control>
 
             <!-- ══════════════════════════════════════════════════════════
@@ -250,6 +341,11 @@
                 <status>0x90</status><midino>0x54</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatjumpBackA</key>
+                <description>Beatjump Back Deck A – C6 (0x54) – size = beatloop size – release</description>
+                <status>0x80</status><midino>0x54</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatgridA</key>
                 <description>Set Beatgrid Deck A – C#6 (0x55)</description>
                 <status>0x90</status><midino>0x55</midino>
@@ -260,9 +356,19 @@
                 <status>0x90</status><midino>0x56</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatjumpFwdA</key>
+                <description>Beatjump Forward Deck A – D6 (0x56) – size = beatloop size – release</description>
+                <status>0x80</status><midino>0x56</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatjumpBackB</key>
                 <description>Beatjump Back Deck B – E6 (0x58) – size = beatloop size</description>
                 <status>0x90</status><midino>0x58</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.beatjumpBackB</key>
+                <description>Beatjump Back Deck B – E6 (0x58) – size = beatloop size – release</description>
+                <status>0x80</status><midino>0x58</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.beatgridB</key>
@@ -273,6 +379,11 @@
             <control><group></group><key>PUSH2T.beatjumpFwdB</key>
                 <description>Beatjump Forward Deck B – F#6 (0x5A) – size = beatloop size</description>
                 <status>0x90</status><midino>0x5A</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.beatjumpFwdB</key>
+                <description>Beatjump Forward Deck B – F#6 (0x5A) – size = beatloop size – release</description>
+                <status>0x80</status><midino>0x5A</midino>
                 <options><script-binding/></options></control>
 
             <!-- ══════════════════════════════════════════════════════════
@@ -316,10 +427,10 @@
                  CC24-26: Deck B (lower display buttons 5-7)
                  ══════════════════════════════════════════════════════════ -->
 
-            <control><group>[Channel1]</group><key>LoadSelectedTrack</key>
+            <control><group></group><key>PUSH2T.loadA</key>
                 <description>Load selected track to Deck A – CC20 (0x14)</description>
                 <status>0xB0</status><midino>0x14</midino>
-                <options><normal/></options></control>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.loadPrevA</key>
                 <description>Load previous track in list to Deck A – CC21 (0x15)</description>
@@ -331,10 +442,10 @@
                 <status>0xB0</status><midino>0x16</midino>
                 <options><script-binding/></options></control>
 
-            <control><group>[Channel2]</group><key>LoadSelectedTrack</key>
+            <control><group></group><key>PUSH2T.loadB</key>
                 <description>Load selected track to Deck B – CC24 (0x18)</description>
                 <status>0xB0</status><midino>0x18</midino>
-                <options><normal/></options></control>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.loadPrevB</key>
                 <description>Load previous track in list to Deck B – CC25 (0x19)</description>

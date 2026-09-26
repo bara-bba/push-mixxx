@@ -210,6 +210,7 @@ PUSH2T.buildSlots = function () {
     def('C118', 127, 64);              // delete: on = held
     def('C20', 64, 1);  def('C21', 1, 0);  def('C22', 1, 0);   // load / prev / next A
     def('C24', 64, 1);  def('C25', 1, 0);  def('C26', 1, 0);   // load / prev / next B
+    def('C110', 127, 32); def('C111', 127, 32); def('C112', 127, 32); def('C113', 127, 32);   // scene buttons
     def('C23', C.orange, C.paleWhite); def('C27', C.orange, C.paleWhite);   // deck-select A / B
     def('C105', 64, 1); def('C109', 64, 1);                    // gain reset A / B
     for (var k in PUSH2T.SAVED) {
@@ -258,6 +259,7 @@ PUSH2T.init = function (id, debugging) {
     try {
         PUSH2T.buildSlots();
         PUSH2T.clearAllPads();
+        PUSH2T.stripRelease();
         // Force Start-anchored beatloops on both decks (LoopAnchorPoint::Start = 0).
         // Root cause of "loop sets the cursor as the END instead of the START":
         // this isn't a script bug — Mixxx persists a per-deck loop_anchor flag
@@ -284,9 +286,12 @@ PUSH2T.shutdown = function () {
     if (engine.isScratching(2)) { engine.scratchDisable(2); }
     PUSH2T.clearAllPads();
     // Clear CC button LEDs (incl. SHIFT 0x31, DELETE 0x76, RECORD 0x56)
-    [0x14,0x15,0x16,0x18,0x19,0x1A,0x03,0x09,0x17,0x1B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x55,0x56,0x58,0x69,0x6D,0x76].forEach(function(cc) {
+    [0x14,0x15,0x16,0x18,0x19,0x1A,0x03,0x09,0x17,0x1B,0x2C,0x6E,0x6F,0x70,0x71,0x2D,0x2E,0x2F,0x30,0x31,0x55,0x56,0x58,0x69,0x6D,0x76].forEach(function(cc) {
         midi.sendShortMsg(0xB0, cc, 0);
     });
+    PUSH2T.stripConfig(PUSH2T.STRIP_CFG_HOST);
+    PUSH2T.stripLedsSet(-1, false);
+    PUSH2T.stripConfig(PUSH2T.STRIP_CFG_PUSH);
     print('[PUSH2T] Push 2 Pusher mapping shut down.');
 };
 
@@ -439,6 +444,7 @@ PUSH2T._deckSelect = function (side, v) {
     if (v <= 0) { return; }
     PUSH2T.selectedDeck = PUSH2T.shiftActive ? side : null;
     PUSH2T.drawDeckSelect();
+    PUSH2T.drawStrip();
     print('[PUSH2T] selected deck: ' + (PUSH2T.selectedDeck || 'none'));
 };
 PUSH2T.deckSelA = function (c, t, v) { PUSH2T._deckSelect('A', v); };
@@ -496,10 +502,25 @@ PUSH2T.metronomeBtn = function (c, t, v) {
 
 PUSH2T.stripTouch = function (c, t, v, status) {
     PUSH2T.stripTouching = ((status & 0xF0) === 0x90) && v > 0;
+    print('[PUSH2T] strip touch ' + (PUSH2T.stripTouching ? 'on' : 'off'));
 };
 
-PUSH2T.stripPitch = function (c, t, v) {
+PUSH2T.stripPitch = function (c, t, v, status) {
+    if ((status & 0xF0) === 0xB0) {     // mod-wheel CC1 (0-127) -> pitch-bend scale
+        v = (v === 64) ? 8192 : Math.round(v / 127 * 16383);
+        t = v & 0x7F; v = v >> 7;
+    }
+    print('[PUSH2T] strip raw t=' + t + ' v=' + v + ' touching=' + PUSH2T.stripTouching);
     if (PUSH2T.colorMode || !PUSH2T.stripTouching) { return; }
+    // Browse scene: strip position = position in the preview song.
+    if (PUSH2T.inLibraryMode()) {
+        var w14 = (v > 127) ? v : ((v << 7) | (t & 0x7F));
+        if (w14 === 8192) { return; }                        // spring-back on release
+        if (engine.getValue('[PreviewDeck1]', 'track_loaded')) {
+            engine.setValue('[PreviewDeck1]', 'playposition', Math.max(0, Math.min(1, w14 / 16383)));
+        }
+        return;
+    }
     var group = PUSH2T.selectedGroup();
     if (group === null) { return; }
     // Pitch bend arrives as (LSB, MSB); some Mixxx paths pass it pre-combined.
@@ -511,6 +532,125 @@ PUSH2T.stripPitch = function (c, t, v) {
     print('[PUSH2T] strip ' + v14);
     var pos = (v14 - 8192) / 8192;               // -1 .. +1
     engine.setValue(group, 'rate', Math.max(-1, Math.min(1, pos)));
+};
+
+// ─── SCENES (Device CC110, Browse CC111, Mix CC112, Clip CC113) ──────────────
+// A scene decides what the top-row buttons (CC102-109) and the touch strip do.
+//   Browse scene = library mode (library maximized): top row = preview play/
+//     pause + sort buttons, strip = quick-seek the preview song. Toggled by
+//     the Browse scene button OR the Play/browse button (CC85), same action.
+//   Device / Mix / Clip: not defined yet (buttons reserved, LEDs dim).
+//   No scene (default): top row = normal functions, strip = pitch of the
+//     selected deck.
+PUSH2T.sceneBrowse = function (c, t, v) { PUSH2T.toggleBrowser(c, t, v); };
+// Device / Mix / Clip: reserved. Pressing one enters it (leaving Browse); pressing
+// it again returns to no scene.
+PUSH2T._sceneToggle = function (name, v) {
+    if (v > 0) { PUSH2T.setScene(PUSH2T.scene === name ? 'none' : name); }
+};
+PUSH2T.sceneDevice = function (c, t, v) { PUSH2T._sceneToggle('device', v); };
+PUSH2T.sceneMix    = function (c, t, v) { PUSH2T._sceneToggle('mix', v); };
+PUSH2T.sceneClip   = function (c, t, v) { PUSH2T._sceneToggle('clip', v); };
+
+// Entering the Browse scene: put keyboard focus on the track table and make
+// sure a row is selected, so Up/Down and the browse encoder work right away.
+// (Delayed a moment so the maximized-library layout exists first.)
+// focused_widget: 0 none, 1 search bar, 2 sidebar, 3 track table.
+// Down-then-Up leaves the selection unchanged if a row was already selected,
+// and selects the first row if there was none.
+PUSH2T.focusTrackTable = function () {
+    engine.beginTimer(250, function () {
+        var lib = '[Library]';
+        var before = engine.getValue(lib, 'focused_widget');
+        engine.setValue(lib, 'focused_widget', 3);
+        var after = engine.getValue(lib, 'focused_widget');
+        print('[PUSH2T] focus: focused_widget ' + before + ' -> ' + after);
+        if (after !== 3) {
+            // Setting it had no effect on this Mixxx: step focus forward instead.
+            for (var n = 0; n < PUSH2T.LIBRARY_FOCUS_STEPS; n++) {
+                engine.setValue(lib, 'MoveFocusForward', 1);
+            }
+        }
+        engine.beginTimer(120, function () {
+            engine.setValue(lib, 'MoveVertical', 1);
+            engine.setValue(lib, 'MoveVertical', -1);
+            print('[PUSH2T] focus: cursor placed, focused_widget = ' + engine.getValue(lib, 'focused_widget'));
+        }, true);
+    }, true);
+};
+
+// ─── TOUCH STRIP LEDs (Browse scene: preview song cursor) ────────────────────
+// Push 2 SysEx: 0x17 = touch strip configuration flags, 0x19 = 31 LED
+// brightnesses (0-7, two per byte). Flags used: bit0 host controls LEDs, bit1
+// host sends via SysEx, bit2 pitch-bend mode, bit5+6 auto-return to center
+// (same behavior as the default). With bit0 = 0 the strip goes back to Push's
+// own LED display.
+PUSH2T.STRIP_LEDS = 31;
+PUSH2T.STRIP_CFG_HOST  = 0x67;
+PUSH2T.STRIP_CFG_PUSH  = 0x64;
+PUSH2T._stripLed = -1;
+
+// Mixxx's API is midi.sendSysexMsg(byteArray, length) (there is no sendSysEx).
+PUSH2T._sendSysex = function (bytes) {
+    try { midi.sendSysexMsg(bytes, bytes.length); }
+    catch (e) { print('[PUSH2T] sysex failed: ' + e); }
+};
+
+PUSH2T._sysexHead = [0xF0, 0x00, 0x21, 0x1D, 0x01, 0x01];
+PUSH2T.stripConfig = function (flags) {
+    PUSH2T._sendSysex(PUSH2T._sysexHead.concat([0x17, flags, 0xF7]));
+};
+// litIndex -1 = all off. bar = true: dim fill up to the cursor; false: one dot.
+PUSH2T.stripLedsSet = function (litIndex, bar) {
+    var data = [];
+    function lvl(k) {
+        if (litIndex < 0) { return 0; }
+        if (k === litIndex) { return 7; }
+        return (bar && k < litIndex) ? 2 : 0;
+    }
+    for (var i = 0; i < PUSH2T.STRIP_LEDS; i += 2) {
+        data.push(lvl(i) | (lvl(i + 1) << 4));
+    }
+    PUSH2T._sendSysex(PUSH2T._sysexHead.concat([0x19], data, [0xF7]));
+};
+
+// The strip's LEDs are ALWAYS host-drawn (Push's own display showed unwanted
+// extra dots): Browse = bar following the preview song, everything else = a
+// single dot at the selected deck's pitch (center when no deck is selected).
+PUSH2T._stripKey = null;
+PUSH2T.drawStrip = function () {
+    var idx, bar, key;
+    if (PUSH2T.inLibraryMode()) {
+        if (!engine.getValue('[PreviewDeck1]', 'track_loaded')) { idx = -1; }
+        else { idx = Math.round(engine.getValue('[PreviewDeck1]', 'playposition') * (PUSH2T.STRIP_LEDS - 1)); }
+        bar = true;
+    } else {
+        var g = PUSH2T.selectedGroup();
+        var pos = (g === null) ? 0 : engine.getValue(g, 'rate');   // -1..1, 0 = center
+        idx = Math.round((pos + 1) / 2 * (PUSH2T.STRIP_LEDS - 1));
+        bar = false;
+    }
+    if (idx >= 0) { idx = Math.max(0, Math.min(PUSH2T.STRIP_LEDS - 1, idx)); }
+    key = idx + (bar ? 'b' : 'd');
+    if (key === PUSH2T._stripKey) { return; }
+    PUSH2T._stripKey = key;
+    PUSH2T.stripLedsSet(idx, bar);
+};
+PUSH2T.drawStripCursor = PUSH2T.drawStrip;      // (old name still used below)
+
+// Take over the strip LEDs and redraw for the current scene.
+PUSH2T.stripRelease = function () {
+    PUSH2T.stripConfig(PUSH2T.STRIP_CFG_HOST);
+    PUSH2T._stripKey = null;
+    PUSH2T.drawStrip();
+};
+
+PUSH2T.drawScenes = function () {
+    var map = [[0x6E, 'C110', 'device'], [0x6F, 'C111', 'browse'],
+               [0x70, 'C112', 'mix'],    [0x71, 'C113', 'clip']];
+    map.forEach(function (m) {
+        PUSH2T.setCC(m[0], PUSH2T.scene === m[2] ? PUSH2T.slots[m[1]].on : PUSH2T.slots[m[1]].off);
+    });
 };
 
 PUSH2T.drawStaticColors = function () {
@@ -529,6 +669,7 @@ PUSH2T.drawStaticColors = function () {
     });
     // Arrow buttons (browser navigation) – dim idle level
     [0x2C, 0x2D, 0x2E, 0x2F].forEach(function (cc) { PUSH2T.setCC(cc, 64); });
+    PUSH2T.drawScenes();
     PUSH2T.setCC(0x03, 64);
     PUSH2T.setCC(0x09, 64);                                   // METRONOME idle                                   // TAP TEMPO idle
     PUSH2T.drawDeckSelect();
@@ -563,7 +704,7 @@ PUSH2T.drawTopRow = function () {
             PUSH2T.setCC(cc, PUSH2T.C.white);
         });
         PUSH2T.setCC(103, 0);
-        PUSH2T.setCC(102, PUSH2T.previewPlaying() ? PUSH2T.C.green : PUSH2T.C.white);
+        PUSH2T.setCC(102, PUSH2T.previewPlaying() ? PUSH2T.C.green : PUSH2T.C.red);
     } else {
         [102, 103, 104, 106, 107, 108].forEach(function (cc) { PUSH2T.setCC(cc, 0); });
         PUSH2T.setCC(0x69, PUSH2T.gainColor(engine.getValue('[Channel1]', 'pregain')));
@@ -578,13 +719,22 @@ PUSH2T.drawStaticButtons = function () {
     // CC85 is Push 2's Play button (RGB): value = palette index.
     PUSH2T.safeConnect('[Skin]', 'show_maximized_library', function (v) {
         PUSH2T.setCC(0x55, v ? PUSH2T.slots['C85'].on : PUSH2T.slots['C85'].off);
+        if (v) { PUSH2T.scene = 'browse'; }
+        else if (PUSH2T.scene === 'browse') { PUSH2T.scene = 'none'; }
         PUSH2T.drawTopRow();
+        PUSH2T.drawScenes();
+        if (v) { PUSH2T.focusTrackTable(); }
+        PUSH2T.stripRelease();
     });
+    PUSH2T.safeConnect('[PreviewDeck1]', 'playposition', function () { PUSH2T.drawStripCursor(); });
+    PUSH2T.safeConnect('[PreviewDeck1]', 'track_loaded', function () { PUSH2T.drawStripCursor(); });
+    PUSH2T.safeConnect('[Channel1]', 'rate', function () { PUSH2T.drawStrip(); });
+    PUSH2T.safeConnect('[Channel2]', 'rate', function () { PUSH2T.drawStrip(); });
 
     // ── Preview play state -> CC102 LED (library mode only) ──
     PUSH2T.safeConnect('[PreviewDeck1]', 'play', function (v) {
         if (PUSH2T.inLibraryMode()) {
-            PUSH2T.setCC(102, v ? PUSH2T.C.green : PUSH2T.C.white);
+            PUSH2T.setCC(102, v ? PUSH2T.C.green : PUSH2T.C.red);
         }
     });
 
@@ -1176,8 +1326,23 @@ PUSH2T.SORT_NAMES = { 104: 'Title', 105: 'Artist', 106: 'Album', 107: 'BPM',
                       108: 'Key', 109: 'Duration' };
 // CC102 = preview play/pause, CC103 unused (see below).
 
-PUSH2T.inLibraryMode = function () {
-    return engine.getValue('[Skin]', 'show_maximized_library') ? true : false;
+// Current scene: 'none' | 'browse' | 'device' | 'mix' | 'clip'. Browse is
+// tied to the library being maximized (kept in sync from the skin control);
+// pressing any other scene button leaves Browse and un-maximizes the library.
+PUSH2T.scene = 'none';
+PUSH2T.inLibraryMode = function () { return PUSH2T.scene === 'browse'; };
+
+PUSH2T.setScene = function (name) {
+    var wasBrowse = (PUSH2T.scene === 'browse');
+    PUSH2T.scene = name;
+    if (wasBrowse && name !== 'browse') {
+        engine.setValue('[Skin]', 'show_maximized_library', 0);   // leave library view
+    }
+    PUSH2T.drawTopRow();
+    PUSH2T.drawScenes();
+    PUSH2T.drawStripCursor();
+    PUSH2T.stripRelease();
+    print('[PUSH2T] scene: ' + name);
 };
 
 PUSH2T._sortBy = function (cc) {
@@ -1317,16 +1482,18 @@ PUSH2T.connectRecording = function () {
 // ──── ARROW BUTTONS (CC44 Left, CC45 Right, CC46 Up, CC47 Down) ────────────────
 // Up/Down move within whichever list has focus (tracks or sidebar folders/
 // playlists/crates). Left/Right switch focus sidebar <-> tracks;
-// SHIFT+Right opens the selected sidebar item. While the preview deck is
-// playing, Left/Right instead seek the preview.
+// SHIFT+Right opens the selected sidebar item. (Preview seeking is done only
+// with the touch strip, never the arrows.)
 PUSH2T._arrow = function (key, v) {
     if (v <= 0 || PUSH2T.colorMode) { return; }
-    // Preview playing: Left/Right seek the preview instead of navigating.
-    if (PUSH2T.previewPlaying && PUSH2T.previewPlaying()) {
-        if (key === 'MoveLeft')  { PUSH2T.previewSeek(-1); return; }
-        if (key === 'MoveRight') { PUSH2T.previewSeek(1);  return; }
+    if (key === 'MoveUp' || key === 'MoveDown') {
+        PUSH2T.previewDirty = true;
+        // Normal (non-browse) view: if nothing in the library has keyboard
+        // focus, give it to the track table so Up/Down actually move.
+        if (engine.getValue('[Library]', 'focused_widget') === 0) {
+            engine.setValue('[Library]', 'focused_widget', 3);
+        }
     }
-    if (key === 'MoveUp' || key === 'MoveDown') { PUSH2T.previewDirty = true; }
     // Left/Right move keyboard FOCUS between the sidebar (folders/playlists/
     // crates) and the track table, so Up/Down can then walk either list.
     // SHIFT + Right opens/expands the selected sidebar item (GoToItem).
@@ -1486,7 +1653,7 @@ PUSH2T.vuPad = function () {};
 // Wrap every button/pad handler so color-edit mode can intercept it. Done at
 // script load (not init) so the wrapped versions are what the XML resolves.
 (function () {
-    var names = ['metronomeBtn', 'tapTempo', 'deckSelA', 'deckSelB', 'top102', 'top103', 'top104', 'top106', 'top107', 'top108', 'vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
+    var names = ['sceneBrowse', 'sceneDevice', 'sceneMix', 'sceneClip', 'metronomeBtn', 'tapTempo', 'deckSelA', 'deckSelB', 'top102', 'top103', 'top104', 'top106', 'top107', 'top108', 'vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
                  'loadPrevA', 'loadNextA', 'loadPrevB', 'loadNextB',
                  'gainResetA', 'gainResetB'];
     ['A', 'B'].forEach(function (s) {

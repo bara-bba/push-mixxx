@@ -91,6 +91,14 @@ for that reason.
 - **Touch strip** — while touched (note 12) and a deck is selected, sets `rate` from the finger position across the current range. Exact-center pitch-bend (the spring-back on release) is ignored so the pitch stays put.
 - **Color-edit mode (SELECT CC48)** — Duplicate (CC88) copies one slot's color to others (press Duplicate, press source, press destinations).
 
+## Scenes (Device CC110 / Browse CC111 / Mix CC112 / Clip CC113)
+
+A scene decides what the top row (CC102-109) and the touch strip do (`PUSH2T.scene`, `setScene`).
+- **Browse** (also toggled by the Play/browse button CC85; = library maximized): top row = preview play/pause (red stopped, green playing) + sort buttons; strip = seek the preview song, and its LEDs show a dim fill up to a bright cursor at the preview position. Entering it focuses the track table and places a cursor (`focusTrackTable`; uses `[Library] focused_widget`, falls back to MoveFocusForward).
+- **Device / Mix / Clip**: reserved (enter/leave only, LED lit while active). Pressing any scene button leaves Browse and un-maximizes the library.
+- **No scene**: strip = pitch of the selected deck; strip LEDs show a single dot (deck pitch, or center with no deck selected). Strip LEDs are always host-drawn via SysEx (`midi.sendSysexMsg`; config byte 0x67), never Push's own display.
+- Arrows only navigate the library (no preview seeking); the strip does the seeking.
+
 ## Known issues / open items
 
 - White-only CC buttons (Shift/Delete) needed brightness bumped from 1→64 to be visible; confirm they're actually lighting on hardware (last known: unconfirmed after the fix).

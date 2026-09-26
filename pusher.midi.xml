@@ -277,6 +277,31 @@
                 <status>0xE0</status><midino>0x00</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.sceneDevice</key>
+                <description>Scene button Device – CC110 (0x6E)</description>
+                <status>0xB0</status><midino>0x6E</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.sceneBrowse</key>
+                <description>Scene button Browse – CC111 (0x6F)</description>
+                <status>0xB0</status><midino>0x6F</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.sceneMix</key>
+                <description>Scene button Mix – CC112 (0x70)</description>
+                <status>0xB0</status><midino>0x70</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.sceneClip</key>
+                <description>Scene button Clip – CC113 (0x71)</description>
+                <status>0xB0</status><midino>0x71</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.stripPitch</key>
+                <description>Touch strip position as mod wheel CC1 (used when strip is in mod-wheel mode)</description>
+                <status>0xB0</status><midino>0x01</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.deleteBtn</key>
                 <description>DELETE (hold) – CC118 (0x76)</description>
                 <status>0xB0</status><midino>0x76</midino>

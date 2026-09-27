@@ -1,0 +1,26 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+  bridge.midi.xml – output-only Mixxx controller that pushes deck/mixer state
+  as SysEx to push-screen's mixxx-midi-bridge.py for rendering on the Push 2
+  screen. Bind this to a virtual MIDI port (loopMIDI "Mixxx Bridge" on
+  Windows), NOT to the Push 2 hardware port used by pusher.midi.xml.
+  Script file: bridge-script.js (functionprefix: PUSH2BRIDGE)
+-->
+
+<MixxxControllerPreset schemaVersion="1" mixxxVersion="">
+    <info>
+        <name>Mixxx Bridge (push-screen)</name>
+        <author>push-mixxx</author>
+        <description>Output-only: polls deck/mixer state and sends it as SysEx over a virtual MIDI port for push-screen's Push 2 display bridge. No pad/button input.</description>
+    </info>
+
+    <controller id="Mixxx Bridge">
+        <scriptfiles>
+            <file functionprefix="PUSH2BRIDGE" filename="bridge-script.js"/>
+        </scriptfiles>
+
+        <controls/>
+
+        <outputs/>
+    </controller>
+</MixxxControllerPreset>

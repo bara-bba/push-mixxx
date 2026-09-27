@@ -302,6 +302,26 @@
                 <status>0xB0</status><midino>0x01</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.fxEnc72</key>
+                <description>Encoder CC72 (0x48) – effect knob in Mix scene</description>
+                <status>0xB0</status><midino>0x48</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.fxEnc73</key>
+                <description>Encoder CC73 (0x49) – effect knob in Mix scene</description>
+                <status>0xB0</status><midino>0x49</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.fxEnc76</key>
+                <description>Encoder CC76 (0x4C) – effect knob in Mix scene</description>
+                <status>0xB0</status><midino>0x4C</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.fxEnc77</key>
+                <description>Encoder CC77 (0x4D) – effect knob in Mix scene</description>
+                <status>0xB0</status><midino>0x4D</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.deleteBtn</key>
                 <description>DELETE (hold) – CC118 (0x76)</description>
                 <status>0xB0</status><midino>0x76</midino>

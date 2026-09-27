@@ -645,7 +645,37 @@ PUSH2T.stripRelease = function () {
     PUSH2T.drawStrip();
 };
 
+// ─── LOWER ROW: Prev / Next buttons are FX1 / FX2 for that channel (all scenes) ──
+// In every scene the Prev (CC21 / CC25) and Next (CC22 / CC26) buttons toggle
+// effect unit 1 / 2 on the deck's channel. Idle keeps the color you set in the
+// color editor (slot ON value); an active effect shows FX_ON_COLOR.
+PUSH2T.FX_ON_COLOR = PUSH2T.C.orange;
+PUSH2T.FX_BUTTONS = {
+    0x15: { ch: '[Channel1]', unit: 1 },   // Deck A Prev -> FX1
+    0x16: { ch: '[Channel1]', unit: 2 },   // Deck A Next -> FX2
+    0x19: { ch: '[Channel2]', unit: 1 },   // Deck B Prev -> FX1
+    0x1A: { ch: '[Channel2]', unit: 2 }    // Deck B Next -> FX2
+};
+PUSH2T._fxGroup = function (b) { return '[EffectRack1_EffectUnit' + b.unit + ']'; };
+PUSH2T._fxKey   = function (b) { return 'group_' + b.ch + '_enable'; };
+
+PUSH2T.fxToggle = function (cc) {
+    var b = PUSH2T.FX_BUTTONS[cc];
+    var cur = engine.getValue(PUSH2T._fxGroup(b), PUSH2T._fxKey(b));
+    engine.setValue(PUSH2T._fxGroup(b), PUSH2T._fxKey(b), cur ? 0 : 1);
+};
+
+PUSH2T.drawLoadNav = function () {
+    [0x15, 0x16, 0x19, 0x1A].forEach(function (cc) {
+        var color = PUSH2T.slots['C' + cc].on;
+        var b = PUSH2T.FX_BUTTONS[cc];
+        if (engine.getValue(PUSH2T._fxGroup(b), PUSH2T._fxKey(b))) { color = PUSH2T.FX_ON_COLOR; }
+        PUSH2T.setCC(cc, color);
+    });
+};
+
 PUSH2T.drawScenes = function () {
+    PUSH2T.drawLoadNav();
     var map = [[0x6E, 'C110', 'device'], [0x6F, 'C111', 'browse'],
                [0x70, 'C112', 'mix'],    [0x71, 'C113', 'clip']];
     map.forEach(function (m) {
@@ -674,9 +704,10 @@ PUSH2T.drawStaticColors = function () {
     PUSH2T.setCC(0x09, 64);                                   // METRONOME idle                                   // TAP TEMPO idle
     PUSH2T.drawDeckSelect();
     // Load / prev / next (static, always mapped)
-    [0x14, 0x15, 0x16, 0x18, 0x19, 0x1A].forEach(function (cc) {
+    [0x14, 0x18].forEach(function (cc) {
         PUSH2T.setCC(cc, PUSH2T.slots['C' + cc].on);
     });
+    PUSH2T.drawLoadNav();
 };
 
 // Gain Reset button color from the deck's pregain (1.0 = 0 dB): white at unity,
@@ -698,8 +729,56 @@ PUSH2T.gainColor = function (gain) {
 
 // Top row LEDs: library mode -> all 8 sort buttons lit; otherwise the Gain
 // Reset ones show gain color and the rest are off.
+// ─── MIX SCENE: 8 encoders + 8 buttons = 2 effect units ─────────────────────
+// Encoders CC71-74 / buttons CC102-105 = FX unit 1; encoders CC75-78 / buttons
+// CC106-109 = FX unit 2. Per unit: knobs 1-3 = the 3 effects' knob (`meta`),
+// buttons 1-3 = those effects' on/off; knob 4 = unit master (`mix`); button 4
+// resets the 3 effect knobs to their default (like double-clicking them).
+// (In this scene the jog/gain encoders CC71/74/75/78 are re-used for FX.)
+PUSH2T.FX_KNOB_STEP = 0.01;      // per encoder tick
+PUSH2T.FX_KNOB_DEFAULT = 0;      // value the reset button restores
+PUSH2T._fxUnitGroup = function (u) { return '[EffectRack1_EffectUnit' + u + ']'; };
+PUSH2T._fxEffGroup  = function (u, n) { return '[EffectRack1_EffectUnit' + u + '_Effect' + n + ']'; };
+
+PUSH2T.fxEncoder = function (cc, v) {
+    var u = (cc < 75) ? 1 : 2, idx = cc - (71 + (u - 1) * 4);
+    var d = PUSH2T._decodeRelative(v) * PUSH2T.FX_KNOB_STEP;
+    if (d === 0) { return; }
+    var g = (idx < 3) ? PUSH2T._fxEffGroup(u, idx + 1) : PUSH2T._fxUnitGroup(u);
+    var key = (idx < 3) ? 'meta' : 'mix';
+    engine.setValue(g, key, Math.max(0, Math.min(1, engine.getValue(g, key) + d)));
+};
+
+PUSH2T.fxButton = function (cc, v) {
+    if (v <= 0) { return; }
+    var u = (cc < 106) ? 1 : 2, idx = cc - (102 + (u - 1) * 4);
+    if (idx < 3) {
+        var g = PUSH2T._fxEffGroup(u, idx + 1);
+        engine.setValue(g, 'enabled', engine.getValue(g, 'enabled') ? 0 : 1);
+    } else {
+        for (var n = 1; n <= 3; n++) {
+            engine.setValue(PUSH2T._fxEffGroup(u, n), 'meta', PUSH2T.FX_KNOB_DEFAULT);
+        }
+    }
+};
+
+PUSH2T.drawMixButtons = function () {
+    [1, 2].forEach(function (u) {
+        for (var idx = 0; idx < 4; idx++) {
+            var cc = 102 + (u - 1) * 4 + idx, color;
+            if (idx < 3) {
+                color = engine.getValue(PUSH2T._fxEffGroup(u, idx + 1), 'enabled')
+                    ? PUSH2T.C.green : PUSH2T.C.paleWhite;
+            } else { color = PUSH2T.C.white; }          // reset button
+            PUSH2T.setCC(cc, color);
+        }
+    });
+};
+
 PUSH2T.drawTopRow = function () {
-    if (PUSH2T.inLibraryMode()) {
+    if (PUSH2T.scene === 'mix') {
+        PUSH2T.drawMixButtons();
+    } else if (PUSH2T.inLibraryMode()) {
         [104, 105, 106, 107, 108, 109].forEach(function (cc) {
             PUSH2T.setCC(cc, PUSH2T.C.white);
         });
@@ -738,12 +817,27 @@ PUSH2T.drawStaticButtons = function () {
         }
     });
 
+    // ── Effect on/off -> Mix scene button LEDs ──
+    [1, 2].forEach(function (u) {
+        for (var n = 1; n <= 3; n++) {
+            PUSH2T.safeConnect(PUSH2T._fxEffGroup(u, n), 'enabled', function () {
+                if (PUSH2T.scene === 'mix') { PUSH2T.drawTopRow(); }
+            });
+        }
+    });
+
+    // ── FX unit enable per channel -> Prev/Next button LEDs (Mix scene) ──
+    [0x15, 0x16, 0x19, 0x1A].forEach(function (cc) {
+        var b = PUSH2T.FX_BUTTONS[cc];
+        PUSH2T.safeConnect(PUSH2T._fxGroup(b), PUSH2T._fxKey(b), function () { PUSH2T.drawLoadNav(); });
+    });
+
     // ── Gain Reset CC105 / CC109 – ON when gain != 0 dB, OFF at unity ──
     PUSH2T.safeConnect('[Channel1]', 'pregain', function (v) {
-        if (!PUSH2T.inLibraryMode()) { PUSH2T.setCC(0x69, PUSH2T.gainColor(v)); }
+        if (PUSH2T.scene !== 'browse' && PUSH2T.scene !== 'mix') { PUSH2T.setCC(0x69, PUSH2T.gainColor(v)); }
     });
     PUSH2T.safeConnect('[Channel2]', 'pregain', function (v) {
-        if (!PUSH2T.inLibraryMode()) { PUSH2T.setCC(0x6D, PUSH2T.gainColor(v)); }
+        if (PUSH2T.scene !== 'browse' && PUSH2T.scene !== 'mix') { PUSH2T.setCC(0x6D, PUSH2T.gainColor(v)); }
     });
 };
 
@@ -1156,32 +1250,20 @@ PUSH2T.loadB = function (c, t, v) {
     if (v > 0) { engine.setValue('[Channel2]', 'LoadSelectedTrack', 1); }
 };
 PUSH2T.loadPrevA = function (c, t, v) {
-    if (v > 0) {
-        PUSH2T.previewDirty = true;
-        engine.setValue('[Library]', 'MoveUp', 1);
-        engine.setValue('[Channel1]', 'LoadSelectedTrack', 1);
-    }
+    // Prev/Next track loading was removed; these buttons are FX1/FX2 toggles in every scene.
+    if (v > 0) { PUSH2T.fxToggle(0x15); }
 };
 PUSH2T.loadNextA = function (c, t, v) {
-    if (v > 0) {
-        PUSH2T.previewDirty = true;
-        engine.setValue('[Library]', 'MoveDown', 1);
-        engine.setValue('[Channel1]', 'LoadSelectedTrack', 1);
-    }
+    // Prev/Next track loading was removed; these buttons are FX1/FX2 toggles in every scene.
+    if (v > 0) { PUSH2T.fxToggle(0x16); }
 };
 PUSH2T.loadPrevB = function (c, t, v) {
-    if (v > 0) {
-        PUSH2T.previewDirty = true;
-        engine.setValue('[Library]', 'MoveUp', 1);
-        engine.setValue('[Channel2]', 'LoadSelectedTrack', 1);
-    }
+    // Prev/Next track loading was removed; these buttons are FX1/FX2 toggles in every scene.
+    if (v > 0) { PUSH2T.fxToggle(0x19); }
 };
 PUSH2T.loadNextB = function (c, t, v) {
-    if (v > 0) {
-        PUSH2T.previewDirty = true;
-        engine.setValue('[Library]', 'MoveDown', 1);
-        engine.setValue('[Channel2]', 'LoadSelectedTrack', 1);
-    }
+    // Prev/Next track loading was removed; these buttons are FX1/FX2 toggles in every scene.
+    if (v > 0) { PUSH2T.fxToggle(0x1A); }
 };
 
 // ──── CC: Jog encoders (CC71 Deck A / CC75 Deck B) ───────────────────────────
@@ -1649,6 +1731,27 @@ PUSH2T._colorTurn = function (amount) {
 // VU pads have no normal-mode action; the binding exists only so color-edit
 // mode can select them.
 PUSH2T.vuPad = function () {};
+
+// Mix scene routing: encoders and top-row buttons act on effects instead.
+PUSH2T.fxEnc72 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(72, v); } };
+PUSH2T.fxEnc73 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(73, v); } };
+PUSH2T.fxEnc76 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(76, v); } };
+PUSH2T.fxEnc77 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(77, v); } };
+[['rateA', 71], ['gainA', 74], ['rateB', 75], ['gainB', 78]].forEach(function (e) {
+    var orig = PUSH2T[e[0]];
+    PUSH2T[e[0]] = function (c, t, v, st, g) {
+        if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(e[1], v); return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
+[['top102', 102], ['top103', 103], ['top104', 104], ['top106', 106], ['top107', 107],
+ ['top108', 108], ['gainResetA', 105], ['gainResetB', 109]].forEach(function (e) {
+    var orig = PUSH2T[e[0]];
+    PUSH2T[e[0]] = function (c, t, v, st, g) {
+        if (PUSH2T.scene === 'mix') { PUSH2T.fxButton(e[1], v); return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
 
 // Wrap every button/pad handler so color-edit mode can intercept it. Done at
 // script load (not init) so the wrapped versions are what the XML resolves.

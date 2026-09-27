@@ -14,6 +14,11 @@
 //         bpm is bpm*10 as a 14-bit value (hi/lo 7-bit); pos is playposition
 //         (0.0-1.0) scaled to 14-bit.
 //    type 0x02 MIXER: crossfader(0-127)
+//    type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) —
+//         mirrors pusher-script.js's PUSH2T.scene, read as a shared global
+//         (Mixxx loads all controller scripts into one JS engine; guarded
+//         with typeof in case pusher-script.js isn't loaded).
+//    type 0x04 FX: unit(0/1) mixKnob(0-127) eff1On eff2On eff3On (0/1 each)
 // ─────────────────────────────────────────────────────────────────────────────
 
 var PUSH2BRIDGE = {};
@@ -21,8 +26,11 @@ var PUSH2BRIDGE = {};
 PUSH2BRIDGE.SYSEX_ID = 0x7D;
 PUSH2BRIDGE.TYPE_TRACK = 0x01;
 PUSH2BRIDGE.TYPE_MIXER = 0x02;
+PUSH2BRIDGE.TYPE_SCENE = 0x03;
+PUSH2BRIDGE.TYPE_FX = 0x04;
 PUSH2BRIDGE.POLL_MS = 200;
 PUSH2BRIDGE.MAX_TEXT = 24;
+PUSH2BRIDGE.SCENE_IDS = { 'none': 0, 'browse': 1, 'device': 2, 'mix': 3, 'clip': 4 };
 
 PUSH2BRIDGE.encodeText = function(str) {
     var out = [];
@@ -65,10 +73,40 @@ PUSH2BRIDGE.sendMixer = function() {
     midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_MIXER, cf127, 0xF7], 5);
 };
 
+PUSH2BRIDGE.currentScene = function() {
+    return (typeof PUSH2T !== 'undefined' && PUSH2T.scene) ? PUSH2T.scene : 'none';
+};
+
+PUSH2BRIDGE.sendScene = function() {
+    var id = PUSH2BRIDGE.SCENE_IDS[PUSH2BRIDGE.currentScene()] || 0;
+    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_SCENE, id, 0xF7], 5);
+};
+
+PUSH2BRIDGE.sendFxUnit = function(unitIndex) {
+    var unit = unitIndex + 1;
+    var unitGroup = '[EffectRack1_EffectUnit' + unit + ']';
+    var mix = engine.getValue(unitGroup, 'mix') || 0; // 0.0-1.0
+    var mix127 = Math.max(0, Math.min(127, Math.round(mix * 127)));
+
+    var effOn = [0, 0, 0];
+    for (var n = 1; n <= 3; n++) {
+        var effGroup = '[EffectRack1_EffectUnit' + unit + '_Effect' + n + ']';
+        effOn[n - 1] = engine.getValue(effGroup, 'enabled') ? 1 : 0;
+    }
+
+    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_FX, unitIndex,
+        mix127, effOn[0], effOn[1], effOn[2], 0xF7], 9);
+};
+
 PUSH2BRIDGE.tick = function() {
     PUSH2BRIDGE.sendTrack(0, "[Channel1]");
     PUSH2BRIDGE.sendTrack(1, "[Channel2]");
     PUSH2BRIDGE.sendMixer();
+    PUSH2BRIDGE.sendScene();
+    if (PUSH2BRIDGE.currentScene() === 'mix') {
+        PUSH2BRIDGE.sendFxUnit(0);
+        PUSH2BRIDGE.sendFxUnit(1);
+    }
 };
 
 PUSH2BRIDGE.init = function() {

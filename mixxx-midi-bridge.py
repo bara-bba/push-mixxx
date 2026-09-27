@@ -35,6 +35,18 @@ TYPE_FX = 0x04
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
+# Push 2 screen deck colors: Deck A = green, Deck B = purple, everything else
+# gray until active. (push-mixxx's own pad scheme uses blue/red per
+# docs/color-palette.md Round 3, but the screen uses green/purple instead.)
+COLOR_DECK_A = (60, 210, 100)
+COLOR_DECK_B = (170, 80, 235)
+COLOR_GRAY = (110, 110, 110)
+COLOR_ORANGE = (255, 150, 0)   # cue / FX accent
+COLOR_YELLOW = (255, 210, 0)   # BPM / warn
+COLOR_GREEN = (0, 200, 90)     # active / on
+COLOR_WHITE = (235, 235, 235)
+COLOR_DIM = (150, 150, 150)
+
 
 class MixxxState:
     """Track Mixxx state, populated from PUSH2BRIDGE SysEx frames."""
@@ -178,7 +190,7 @@ class MixxxMidiBridge:
         if self.state.scene == 'mix':
             self.render_mix_scene(draw, font_large, font_medium, font_small)
         elif self.state.scene in ('device', 'clip'):
-            draw.text((300, 70), f"{self.state.scene.upper()} SCENE", font=font_large, fill=(80, 80, 80))
+            draw.text((300, 70), f"{self.state.scene.upper()} SCENE", font=font_large, fill=COLOR_GRAY)
             draw.text((300, 105), "not yet implemented", font=font_small, fill=(60, 60, 60))
         else:
             self.render_track_scene(draw, font_large, font_medium, font_small)
@@ -189,13 +201,13 @@ class MixxxMidiBridge:
         """Default / browse layout: per-deck track info + transport"""
         mid_x = 480
         self.draw_deck(draw, self.state.deck1, 0, 0, mid_x, 160,
-                        font_large, font_medium, font_small, "DECK A")
+                        font_large, font_medium, font_small, "DECK A", COLOR_DECK_A)
         self.draw_deck(draw, self.state.deck2, mid_x, 0, 960, 160,
-                        font_large, font_medium, font_small, "DECK B")
+                        font_large, font_medium, font_small, "DECK B", COLOR_DECK_B)
 
         cf_x = int(60 + (840 * self.state.crossfader))
-        draw.line([(60, 155), (900, 155)], fill=(100, 100, 100), width=2)
-        draw.ellipse([(cf_x - 10, 150), (cf_x + 10, 160)], fill=(255, 0, 0))
+        draw.line([(60, 155), (900, 155)], fill=COLOR_GRAY, width=2)
+        draw.ellipse([(cf_x - 10, 150), (cf_x + 10, 160)], fill=COLOR_ORANGE)
 
     def render_mix_scene(self, draw, font_large, font_medium, font_small):
         """Mix scene layout: FX unit 1/2 mix level + which effects are on"""
@@ -206,43 +218,45 @@ class MixxxMidiBridge:
                            font_large, font_medium, font_small, "FX UNIT 2")
 
     def draw_fx_unit(self, draw, fx, x1, y1, x2, y2, font_large, font_medium, font_small, label):
-        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=(100, 100, 100))
+        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=COLOR_GRAY)
 
         mix_pct = int(fx['mix'] * 100)
-        draw.text((x1 + 10, y1 + 30), f"MIX {mix_pct}%", font=font_large, fill=(255, 200, 0))
+        draw.text((x1 + 10, y1 + 30), f"MIX {mix_pct}%", font=font_large, fill=COLOR_ORANGE)
 
         bar_width = x2 - x1 - 20
         bar_fill = int(bar_width * fx['mix'])
-        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_width, y1 + 85)], outline=(100, 100, 100))
-        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_fill, y1 + 85)], fill=(255, 150, 0))
+        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_width, y1 + 85)], outline=COLOR_GRAY)
+        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_fill, y1 + 85)], fill=COLOR_ORANGE)
 
         for i, on in enumerate(fx['effects']):
             ex = x1 + 10 + i * 70
-            color = (0, 220, 0) if on else (60, 60, 60)
+            color = COLOR_GREEN if on else (60, 60, 60)
             draw.rectangle([(ex, y1 + 105), (ex + 55, y1 + 135)], fill=color)
-            draw.text((ex + 15, y1 + 112), f"E{i + 1}", font=font_medium, fill=(0, 0, 0) if on else (150, 150, 150))
+            draw.text((ex + 15, y1 + 112), f"E{i + 1}", font=font_medium, fill=(0, 0, 0) if on else COLOR_DIM)
 
-    def draw_deck(self, draw, deck, x1, y1, x2, y2, font_large, font_medium, font_small, label):
-        """Draw a single deck display"""
-        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=(100, 100, 100))
+    def draw_deck(self, draw, deck, x1, y1, x2, y2, font_large, font_medium, font_small, label, deck_color):
+        """Draw a single deck display, tinted with push-mixxx's Deck A=blue/Deck B=red scheme"""
+        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=deck_color)
 
+        # Play indicator: deck color when playing, gray when stopped (matches
+        # pusher-script.js's PUSH2T.DECK play-indicator convention)
         if deck['playing']:
-            draw.polygon([(x2 - 30, y1 + 10), (x2 - 10, y1 + 20), (x2 - 30, y1 + 30)], fill=(0, 255, 0))
+            draw.polygon([(x2 - 30, y1 + 10), (x2 - 10, y1 + 20), (x2 - 30, y1 + 30)], fill=deck_color)
         else:
-            draw.rectangle([(x2 - 30, y1 + 10), (x2 - 10, y1 + 30)], fill=(255, 0, 0))
+            draw.rectangle([(x2 - 30, y1 + 10), (x2 - 10, y1 + 30)], fill=COLOR_GRAY)
 
         if deck['bpm'] > 0:
-            draw.text((x1 + 10, y1 + 30), f"{deck['bpm']:.1f} BPM", font=font_large, fill=(255, 255, 0))
+            draw.text((x1 + 10, y1 + 30), f"{deck['bpm']:.1f} BPM", font=font_large, fill=COLOR_YELLOW)
 
         if deck['title']:
-            draw.text((x1 + 10, y1 + 70), deck['title'][:24], font=font_medium, fill=(255, 255, 255))
+            draw.text((x1 + 10, y1 + 70), deck['title'][:24], font=font_medium, fill=COLOR_WHITE)
         if deck['artist']:
-            draw.text((x1 + 10, y1 + 95), deck['artist'][:24], font=font_small, fill=(180, 180, 180))
+            draw.text((x1 + 10, y1 + 95), deck['artist'][:24], font=font_small, fill=COLOR_DIM)
 
         bar_width = x2 - x1 - 20
         bar_fill = int(bar_width * deck['position'])
-        draw.rectangle([(x1 + 10, y2 - 15), (x1 + 10 + bar_width, y2 - 5)], outline=(100, 100, 100))
-        draw.rectangle([(x1 + 10, y2 - 15), (x1 + 10 + bar_fill, y2 - 5)], fill=(0, 150, 255))
+        draw.rectangle([(x1 + 10, y2 - 15), (x1 + 10 + bar_width, y2 - 5)], outline=COLOR_GRAY)
+        draw.rectangle([(x1 + 10, y2 - 15), (x1 + 10 + bar_fill, y2 - 5)], fill=deck_color)
 
     def display_loop(self):
         """Continuously render display"""

@@ -8,10 +8,15 @@ Reads the SysEx protocol sent by push-mixxx's bridge-script.js
 display from it. This is NOT the same MIDI port as the Push 2 hardware
 controller mapping (pusher.midi.xml) in the sibling push-mixxx repo.
 
+Mixxx has never exposed track title/artist to controller scripting (see
+github.com/mixxxdj/mixxx/issues/6898), so the SysEx protocol carries
+duration+bpm instead, and artwork.TrackLookup identifies the loaded track
+by matching those against Mixxx's own library database.
+
 SysEx frame: F0 7D <type> <deck> <payload...> F7
-  type 0x01 TRACK: deck(0/1) playing(0/1) bpmHi bpmLo posHi posLo
-                   title-bytes 0x00 artist-bytes   (bpm = 14-bit bpm*10,
-                   pos = 14-bit playposition 0.0-1.0)
+  type 0x01 TRACK: deck(0/1) playing(0/1) bpmHi bpmLo posHi posLo durHi durLo
+                   (bpm = 14-bit bpm*10, pos = 14-bit playposition 0.0-1.0,
+                   dur = 14-bit duration in whole seconds)
   type 0x02 MIXER: crossfader(0-127)
   type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) - mirrors
                     push-mixxx's PUSH2T.scene
@@ -25,7 +30,7 @@ import time
 import mido
 from PIL import Image, ImageDraw, ImageFont
 
-from artwork import ArtworkCache
+from artwork import TrackLookup
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 
@@ -65,8 +70,10 @@ class MixxxState:
     """Track Mixxx state, populated from PUSH2BRIDGE SysEx frames."""
 
     def __init__(self):
-        self.deck1 = {'playing': False, 'bpm': 0.0, 'title': '', 'artist': '', 'position': 0.0}
-        self.deck2 = {'playing': False, 'bpm': 0.0, 'title': '', 'artist': '', 'position': 0.0}
+        self.deck1 = {'playing': False, 'bpm': 0.0, 'duration': 0.0, 'position': 0.0,
+                      'title': '', 'artist': '', 'art': None}
+        self.deck2 = {'playing': False, 'bpm': 0.0, 'duration': 0.0, 'position': 0.0,
+                      'title': '', 'artist': '', 'art': None}
         self.crossfader = 0.5
         self.scene = 'none'
         self.fx = {
@@ -88,7 +95,7 @@ class MixxxMidiBridge:
         self.running = False
         self.midi_in = None
         self.midi_out = None
-        self.artwork = ArtworkCache(size=120)
+        self.track_lookup = TrackLookup(art_size=100)
 
     def list_midi_ports(self):
         """List available MIDI ports"""
@@ -149,20 +156,17 @@ class MixxxMidiBridge:
 
         frame_type = data[1]
 
-        if frame_type == TYPE_TRACK and len(data) >= 9:
+        if frame_type == TYPE_TRACK and len(data) >= 10:
             deck = self.state.deck1 if data[2] == 0 else self.state.deck2
             deck['playing'] = bool(data[3])
             deck['bpm'] = _join14(data[4], data[5]) / 10.0
             deck['position'] = _join14(data[6], data[7]) / 16383.0
+            deck['duration'] = float(_join14(data[8], data[9]))
 
-            rest = data[8:]
-            if 0x00 in rest:
-                sep = rest.index(0x00)
-                title_bytes, artist_bytes = rest[:sep], rest[sep + 1:]
-            else:
-                title_bytes, artist_bytes = rest, ()
-            deck['title'] = ''.join(chr(b) for b in title_bytes)
-            deck['artist'] = ''.join(chr(b) for b in artist_bytes)
+            info = self.track_lookup.resolve(deck['duration'], deck['bpm'])
+            deck['title'] = info['title']
+            deck['artist'] = info['artist']
+            deck['art'] = info['art']
 
         elif frame_type == TYPE_MIXER and len(data) >= 3:
             self.state.crossfader = data[2] / 127.0
@@ -252,7 +256,7 @@ class MixxxMidiBridge:
         art_size = 100
         art_x, art_y = x1 + 9, y1 + 9
         draw.rectangle([(art_x - 1, art_y - 1), (art_x + art_size, art_y + art_size)], outline=deck_color)
-        art = self.artwork.get(deck['artist'], deck['title']) if deck['title'] else None
+        art = deck['art']
         if art is not None:
             thumb = art.resize((art_size, art_size)) if art.size != (art_size, art_size) else art
             img.paste(thumb, (art_x, art_y))

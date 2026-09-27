@@ -13,6 +13,10 @@ SysEx frame: F0 7D <type> <deck> <payload...> F7
                    title-bytes 0x00 artist-bytes   (bpm = 14-bit bpm*10,
                    pos = 14-bit playposition 0.0-1.0)
   type 0x02 MIXER: crossfader(0-127)
+  type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) - mirrors
+                    push-mixxx's PUSH2T.scene
+  type 0x04 FX: unit(0/1) mixKnob(0-127) eff1On eff2On eff3On (0/1 each) -
+                only sent while scene == mix
 """
 
 import importlib
@@ -26,6 +30,10 @@ Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 SYSEX_ID = 0x7D
 TYPE_TRACK = 0x01
 TYPE_MIXER = 0x02
+TYPE_SCENE = 0x03
+TYPE_FX = 0x04
+
+SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
 
 class MixxxState:
@@ -35,6 +43,11 @@ class MixxxState:
         self.deck1 = {'playing': False, 'bpm': 0.0, 'title': '', 'artist': '', 'position': 0.0}
         self.deck2 = {'playing': False, 'bpm': 0.0, 'title': '', 'artist': '', 'position': 0.0}
         self.crossfader = 0.5
+        self.scene = 'none'
+        self.fx = {
+            0: {'mix': 0.0, 'effects': [False, False, False]},
+            1: {'mix': 0.0, 'effects': [False, False, False]},
+        }
 
 
 def _join14(hi, lo):
@@ -122,6 +135,15 @@ class MixxxMidiBridge:
         elif frame_type == TYPE_MIXER and len(data) >= 3:
             self.state.crossfader = data[2] / 127.0
 
+        elif frame_type == TYPE_SCENE and len(data) >= 3:
+            self.state.scene = SCENE_NAMES.get(data[2], 'none')
+
+        elif frame_type == TYPE_FX and len(data) >= 7:
+            unit = self.state.fx.get(data[2])
+            if unit is not None:
+                unit['mix'] = data[3] / 127.0
+                unit['effects'] = [bool(data[4]), bool(data[5]), bool(data[6])]
+
     def midi_listener(self):
         """Listen for MIDI messages from Mixxx"""
         if not self.midi_in:
@@ -134,7 +156,7 @@ class MixxxMidiBridge:
             self.process_midi_message(msg)
 
     def render_display(self):
-        """Render custom display for Push 2"""
+        """Render custom display for Push 2, laid out per the active push-mixxx scene"""
         img = Image.new('RGB', (960, 160), color=(0, 0, 0))
         draw = ImageDraw.Draw(img)
 
@@ -147,6 +169,18 @@ class MixxxMidiBridge:
             font_medium = ImageFont.load_default()
             font_small = ImageFont.load_default()
 
+        if self.state.scene == 'mix':
+            self.render_mix_scene(draw, font_large, font_medium, font_small)
+        elif self.state.scene in ('device', 'clip'):
+            draw.text((300, 70), f"{self.state.scene.upper()} SCENE", font=font_large, fill=(80, 80, 80))
+            draw.text((300, 105), "not yet implemented", font=font_small, fill=(60, 60, 60))
+        else:
+            self.render_track_scene(draw, font_large, font_medium, font_small)
+
+        return img
+
+    def render_track_scene(self, draw, font_large, font_medium, font_small):
+        """Default / browse layout: per-deck track info + transport"""
         mid_x = 480
         self.draw_deck(draw, self.state.deck1, 0, 0, mid_x, 160,
                         font_large, font_medium, font_small, "DECK A")
@@ -157,7 +191,30 @@ class MixxxMidiBridge:
         draw.line([(60, 155), (900, 155)], fill=(100, 100, 100), width=2)
         draw.ellipse([(cf_x - 10, 150), (cf_x + 10, 160)], fill=(255, 0, 0))
 
-        return img
+    def render_mix_scene(self, draw, font_large, font_medium, font_small):
+        """Mix scene layout: FX unit 1/2 mix level + which effects are on"""
+        mid_x = 480
+        self.draw_fx_unit(draw, self.state.fx[0], 0, 0, mid_x, 160,
+                           font_large, font_medium, font_small, "FX UNIT 1")
+        self.draw_fx_unit(draw, self.state.fx[1], mid_x, 0, 960, 160,
+                           font_large, font_medium, font_small, "FX UNIT 2")
+
+    def draw_fx_unit(self, draw, fx, x1, y1, x2, y2, font_large, font_medium, font_small, label):
+        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=(100, 100, 100))
+
+        mix_pct = int(fx['mix'] * 100)
+        draw.text((x1 + 10, y1 + 30), f"MIX {mix_pct}%", font=font_large, fill=(255, 200, 0))
+
+        bar_width = x2 - x1 - 20
+        bar_fill = int(bar_width * fx['mix'])
+        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_width, y1 + 85)], outline=(100, 100, 100))
+        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_fill, y1 + 85)], fill=(255, 150, 0))
+
+        for i, on in enumerate(fx['effects']):
+            ex = x1 + 10 + i * 70
+            color = (0, 220, 0) if on else (60, 60, 60)
+            draw.rectangle([(ex, y1 + 105), (ex + 55, y1 + 135)], fill=color)
+            draw.text((ex + 15, y1 + 112), f"E{i + 1}", font=font_medium, fill=(0, 0, 0) if on else (150, 150, 150))
 
     def draw_deck(self, draw, deck, x1, y1, x2, y2, font_large, font_medium, font_small, label):
         """Draw a single deck display"""

@@ -25,7 +25,20 @@ import time
 import mido
 from PIL import Image, ImageDraw, ImageFont
 
+from artwork import ArtworkCache
+
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
+
+MONO_FONT_CANDIDATES = ["consola.ttf", "cour.ttf", "arial.ttf"]
+
+
+def _load_font(size):
+    for name in MONO_FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(name, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
 
 SYSEX_ID = 0x7D
 TYPE_TRACK = 0x01
@@ -75,6 +88,7 @@ class MixxxMidiBridge:
         self.running = False
         self.midi_in = None
         self.midi_out = None
+        self.artwork = ArtworkCache(size=120)
 
     def list_midi_ports(self):
         """List available MIDI ports"""
@@ -178,36 +192,32 @@ class MixxxMidiBridge:
         img = Image.new('RGB', (960, 160), color=(0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        try:
-            font_large = ImageFont.truetype("arial.ttf", 30)
-            font_medium = ImageFont.truetype("arial.ttf", 20)
-            font_small = ImageFont.truetype("arial.ttf", 16)
-        except Exception:
-            font_large = ImageFont.load_default()
-            font_medium = ImageFont.load_default()
-            font_small = ImageFont.load_default()
+        font_large = _load_font(26)
+        font_medium = _load_font(18)
+        font_small = _load_font(13)
 
         if self.state.scene == 'mix':
             self.render_mix_scene(draw, font_large, font_medium, font_small)
         elif self.state.scene in ('device', 'clip'):
+            draw.rectangle([(2, 2), (957, 157)], outline=COLOR_GRAY)
             draw.text((300, 70), f"{self.state.scene.upper()} SCENE", font=font_large, fill=COLOR_GRAY)
             draw.text((300, 105), "not yet implemented", font=font_small, fill=(60, 60, 60))
         else:
-            self.render_track_scene(draw, font_large, font_medium, font_small)
+            self.render_track_scene(img, draw, font_large, font_medium, font_small)
 
         return img
 
-    def render_track_scene(self, draw, font_large, font_medium, font_small):
-        """Default / browse layout: per-deck track info + transport"""
+    def render_track_scene(self, img, draw, font_large, font_medium, font_small):
+        """Default / browse layout: per-deck artwork + track info + transport"""
         mid_x = 480
-        self.draw_deck(draw, self.state.deck1, 0, 0, mid_x, 160,
+        self.draw_deck(img, draw, self.state.deck1, 0, 0, mid_x, 160,
                         font_large, font_medium, font_small, "DECK A", COLOR_DECK_A)
-        self.draw_deck(draw, self.state.deck2, mid_x, 0, 960, 160,
+        self.draw_deck(img, draw, self.state.deck2, mid_x, 0, 960, 160,
                         font_large, font_medium, font_small, "DECK B", COLOR_DECK_B)
 
         cf_x = int(60 + (840 * self.state.crossfader))
-        draw.line([(60, 155), (900, 155)], fill=COLOR_GRAY, width=2)
-        draw.ellipse([(cf_x - 10, 150), (cf_x + 10, 160)], fill=COLOR_ORANGE)
+        draw.line([(60, 155), (900, 155)], fill=COLOR_GRAY, width=1)
+        draw.ellipse([(cf_x - 4, 151), (cf_x + 4, 159)], fill=COLOR_ORANGE)
 
     def render_mix_scene(self, draw, font_large, font_medium, font_small):
         """Mix scene layout: FX unit 1/2 mix level + which effects are on"""
@@ -234,29 +244,47 @@ class MixxxMidiBridge:
             draw.rectangle([(ex, y1 + 105), (ex + 55, y1 + 135)], fill=color)
             draw.text((ex + 15, y1 + 112), f"E{i + 1}", font=font_medium, fill=(0, 0, 0) if on else COLOR_DIM)
 
-    def draw_deck(self, draw, deck, x1, y1, x2, y2, font_large, font_medium, font_small, label, deck_color):
-        """Draw a single deck display, tinted with push-mixxx's Deck A=blue/Deck B=red scheme"""
-        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=deck_color)
+    def draw_deck(self, img, draw, deck, x1, y1, x2, y2, font_large, font_medium, font_small, label, deck_color):
+        """OP-1/Push2-style panel: thin border, square artwork, track name + transport"""
+        dim_color = tuple(c // 3 for c in deck_color)
+        draw.rectangle([(x1 + 1, y1 + 1), (x2 - 2, y2 - 2)], outline=dim_color)
 
-        # Play indicator: deck color when playing, gray when stopped (matches
-        # pusher-script.js's PUSH2T.DECK play-indicator convention)
-        if deck['playing']:
-            draw.polygon([(x2 - 30, y1 + 10), (x2 - 10, y1 + 20), (x2 - 30, y1 + 30)], fill=deck_color)
+        art_size = 100
+        art_x, art_y = x1 + 9, y1 + 9
+        draw.rectangle([(art_x - 1, art_y - 1), (art_x + art_size, art_y + art_size)], outline=deck_color)
+        art = self.artwork.get(deck['artist'], deck['title']) if deck['title'] else None
+        if art is not None:
+            thumb = art.resize((art_size, art_size)) if art.size != (art_size, art_size) else art
+            img.paste(thumb, (art_x, art_y))
         else:
-            draw.rectangle([(x2 - 30, y1 + 10), (x2 - 10, y1 + 30)], fill=COLOR_GRAY)
+            draw.line([(art_x, art_y), (art_x + art_size, art_y + art_size)], fill=dim_color)
+            draw.line([(art_x + art_size, art_y), (art_x, art_y + art_size)], fill=dim_color)
+
+        text_x = art_x + art_size + 14
+        text_w = x2 - text_x - 10
+
+        draw.text((text_x, y1 + 6), label, font=font_small, fill=deck_color)
+
+        # Play indicator: deck color when playing, gray when stopped
+        if deck['playing']:
+            draw.polygon([(x2 - 24, y1 + 8), (x2 - 10, y1 + 15), (x2 - 24, y1 + 22)], fill=deck_color)
+        else:
+            draw.rectangle([(x2 - 24, y1 + 8), (x2 - 12, y1 + 22)], fill=COLOR_GRAY)
+
+        title = (deck['title'] or '(no track)')[:28]
+        draw.text((text_x, y1 + 26), title, font=font_medium, fill=COLOR_WHITE if deck['title'] else COLOR_GRAY)
+        if deck['artist']:
+            draw.text((text_x, y1 + 50), deck['artist'][:28], font=font_small, fill=COLOR_DIM)
 
         if deck['bpm'] > 0:
-            draw.text((x1 + 10, y1 + 30), f"{deck['bpm']:.1f} BPM", font=font_large, fill=COLOR_YELLOW)
+            draw.text((text_x, y1 + 74), f"{deck['bpm']:5.1f} BPM", font=font_medium, fill=COLOR_YELLOW)
 
-        if deck['title']:
-            draw.text((x1 + 10, y1 + 70), deck['title'][:24], font=font_medium, fill=COLOR_WHITE)
-        if deck['artist']:
-            draw.text((x1 + 10, y1 + 95), deck['artist'][:24], font=font_small, fill=COLOR_DIM)
-
-        bar_width = x2 - x1 - 20
+        bar_x1, bar_x2 = x1 + 9, x2 - 10
+        bar_width = bar_x2 - bar_x1
         bar_fill = int(bar_width * deck['position'])
-        draw.rectangle([(x1 + 10, y2 - 15), (x1 + 10 + bar_width, y2 - 5)], outline=COLOR_GRAY)
-        draw.rectangle([(x1 + 10, y2 - 15), (x1 + 10 + bar_fill, y2 - 5)], fill=deck_color)
+        bar_y = y2 - 18
+        draw.rectangle([(bar_x1, bar_y), (bar_x2, bar_y + 6)], outline=dim_color)
+        draw.rectangle([(bar_x1, bar_y), (bar_x1 + bar_fill, bar_y + 6)], fill=deck_color)
 
     def display_loop(self):
         """Continuously render display"""

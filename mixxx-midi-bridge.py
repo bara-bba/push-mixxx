@@ -78,17 +78,23 @@ class MixxxMidiBridge:
     def connect_midi(self, input_port=None, output_port=None):
         """Connect to the Mixxx Bridge virtual MIDI port"""
         try:
-            if input_port is None:
+            if input_port is None or input_port not in mido.get_input_names():
+                wanted = input_port or 'Mixxx Bridge'
                 for port in mido.get_input_names():
-                    if 'Mixxx Bridge' in port or 'loopMIDI' in port:
+                    if wanted in port or 'loopMIDI' in port:
                         input_port = port
                         break
+                else:
+                    input_port = None
 
-            if output_port is None:
+            if output_port is None or output_port not in mido.get_output_names():
+                wanted = output_port or 'Mixxx Bridge'
                 for port in mido.get_output_names():
-                    if 'Mixxx Bridge' in port or 'loopMIDI' in port:
+                    if wanted in port or 'loopMIDI' in port:
                         output_port = port
                         break
+                else:
+                    output_port = None
 
             if input_port:
                 self.midi_in = mido.open_input(input_port)

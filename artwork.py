@@ -159,7 +159,7 @@ class TrackLookup:
         self._cache = {}  # (round(duration), round(bpm,1)) -> result dict
 
     def resolve(self, duration, bpm):
-        empty = {'title': '', 'artist': '', 'art': None}
+        empty = {'title': '', 'artist': '', 'art': None, 'path': None}
         if duration <= 1 or bpm <= 0:
             return empty
 
@@ -212,4 +212,4 @@ class TrackLookup:
         if art is not None:
             art = self._art._fit_square(art)
 
-        return {'title': title or '', 'artist': artist or '', 'art': art}
+        return {'title': title or '', 'artist': artist or '', 'art': art, 'path': file_location}

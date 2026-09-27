@@ -4,3 +4,4 @@ numpy>=1.21.0
 mss>=6.1.0
 mido>=1.2.10
 python-rtmidi>=1.4.9
+mutagen>=1.46.0

@@ -24,6 +24,7 @@ SysEx frame: F0 7D <type> <deck> <payload...> F7
                 only sent while scene == mix
 """
 
+import colorsys
 import importlib
 import time
 
@@ -31,6 +32,7 @@ import mido
 from PIL import Image, ImageDraw, ImageFont
 
 from artwork import TrackLookup
+from waveform import WaveformCache
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 
@@ -71,9 +73,9 @@ class MixxxState:
 
     def __init__(self):
         self.deck1 = {'playing': False, 'bpm': 0.0, 'duration': 0.0, 'position': 0.0,
-                      'title': '', 'artist': '', 'art': None}
+                      'title': '', 'artist': '', 'art': None, 'path': None}
         self.deck2 = {'playing': False, 'bpm': 0.0, 'duration': 0.0, 'position': 0.0,
-                      'title': '', 'artist': '', 'art': None}
+                      'title': '', 'artist': '', 'art': None, 'path': None}
         self.crossfader = 0.5
         self.scene = 'none'
         self.fx = {
@@ -95,7 +97,8 @@ class MixxxMidiBridge:
         self.running = False
         self.midi_in = None
         self.midi_out = None
-        self.track_lookup = TrackLookup(art_size=100)
+        self.track_lookup = TrackLookup(art_size=70)
+        self.waveform_cache = WaveformCache()
 
     def list_midi_ports(self):
         """List available MIDI ports"""
@@ -167,6 +170,7 @@ class MixxxMidiBridge:
             deck['title'] = info['title']
             deck['artist'] = info['artist']
             deck['art'] = info['art']
+            deck['path'] = info['path']
 
         elif frame_type == TYPE_MIXER and len(data) >= 3:
             self.state.crossfader = data[2] / 127.0
@@ -249,12 +253,14 @@ class MixxxMidiBridge:
             draw.text((ex + 15, y1 + 112), f"E{i + 1}", font=font_medium, fill=(0, 0, 0) if on else COLOR_DIM)
 
     def draw_deck(self, img, draw, deck, x1, y1, x2, y2, font_large, font_medium, font_small, label, deck_color):
-        """OP-1/Push2-style panel: thin border, square artwork, track name + transport"""
+        """OP-1/Push2-style panel: compact header (artwork + track info) over a
+        full-width colorful scrolling waveform, algoriddim-style."""
         dim_color = tuple(c // 3 for c in deck_color)
         draw.rectangle([(x1 + 1, y1 + 1), (x2 - 2, y2 - 2)], outline=dim_color)
 
-        art_size = 100
-        art_x, art_y = x1 + 9, y1 + 9
+        header_h = 62
+        art_size = header_h - 8
+        art_x, art_y = x1 + 6, y1 + 6
         draw.rectangle([(art_x - 1, art_y - 1), (art_x + art_size, art_y + art_size)], outline=deck_color)
         art = deck['art']
         if art is not None:
@@ -264,31 +270,61 @@ class MixxxMidiBridge:
             draw.line([(art_x, art_y), (art_x + art_size, art_y + art_size)], fill=dim_color)
             draw.line([(art_x + art_size, art_y), (art_x, art_y + art_size)], fill=dim_color)
 
-        text_x = art_x + art_size + 14
-        text_w = x2 - text_x - 10
+        text_x = art_x + art_size + 12
 
-        draw.text((text_x, y1 + 6), label, font=font_small, fill=deck_color)
+        draw.text((text_x, y1 + 4), label, font=font_small, fill=deck_color)
 
         # Play indicator: deck color when playing, gray when stopped
         if deck['playing']:
-            draw.polygon([(x2 - 24, y1 + 8), (x2 - 10, y1 + 15), (x2 - 24, y1 + 22)], fill=deck_color)
+            draw.polygon([(x2 - 22, y1 + 6), (x2 - 10, y1 + 13), (x2 - 22, y1 + 20)], fill=deck_color)
         else:
-            draw.rectangle([(x2 - 24, y1 + 8), (x2 - 12, y1 + 22)], fill=COLOR_GRAY)
+            draw.rectangle([(x2 - 22, y1 + 6), (x2 - 12, y1 + 20)], fill=COLOR_GRAY)
 
-        title = (deck['title'] or '(no track)')[:28]
-        draw.text((text_x, y1 + 26), title, font=font_medium, fill=COLOR_WHITE if deck['title'] else COLOR_GRAY)
+        title = (deck['title'] or '(no track)')[:26]
+        draw.text((text_x, y1 + 22), title, font=font_medium, fill=COLOR_WHITE if deck['title'] else COLOR_GRAY)
         if deck['artist']:
-            draw.text((text_x, y1 + 50), deck['artist'][:28], font=font_small, fill=COLOR_DIM)
-
+            draw.text((text_x, y1 + 44), deck['artist'][:26], font=font_small, fill=COLOR_DIM)
         if deck['bpm'] > 0:
-            draw.text((text_x, y1 + 74), f"{deck['bpm']:5.1f} BPM", font=font_medium, fill=COLOR_YELLOW)
+            draw.text((x2 - 90, y1 + 44), f"{deck['bpm']:5.1f}", font=font_small, fill=COLOR_YELLOW)
 
-        bar_x1, bar_x2 = x1 + 9, x2 - 10
-        bar_width = bar_x2 - bar_x1
-        bar_fill = int(bar_width * deck['position'])
-        bar_y = y2 - 18
-        draw.rectangle([(bar_x1, bar_y), (bar_x2, bar_y + 6)], outline=dim_color)
-        draw.rectangle([(bar_x1, bar_y), (bar_x1 + bar_fill, bar_y + 6)], fill=deck_color)
+        self.draw_waveform(img, draw, deck, x1 + 2, y1 + header_h + 4, x2 - 2, y2 - 2, deck_color)
+
+    def draw_waveform(self, img, draw, deck, x1, y1, x2, y2, deck_color):
+        """Full-height colorful scrolling waveform (algoriddim-style): fixed
+        playhead at panel center, real audio scrolling underneath, red
+        zero-amplitude line, deck-colored playhead needle."""
+        mid_y = (y1 + y2) // 2
+
+        envelope = self.waveform_cache.get(deck['path']) if deck['playing'] or deck['duration'] else None
+        if envelope is None or deck['duration'] <= 0:
+            draw.line([(x1, mid_y), (x2, mid_y)], fill=(120, 20, 20))
+            draw.line([(x1, y1), (x2, y2)], fill=(30, 30, 30))
+            draw.line([(x2, y1), (x1, y2)], fill=(30, 30, 30))
+        else:
+            width = x2 - x1
+            half_h = (y2 - y1) // 2
+            cols = envelope.shape[0]
+            window_seconds = 6.0
+            cols_per_sec = cols / deck['duration']
+            half_window_cols = max(1, int((window_seconds / 2) * cols_per_sec))
+            center_col = int(deck['position'] * cols)
+
+            draw.line([(x1, mid_y), (x2, mid_y)], fill=(90, 15, 15))
+            for px in range(width):
+                col = center_col - half_window_cols + int(px * (2 * half_window_cols) / max(1, width))
+                if col < 0 or col >= cols:
+                    continue
+                lo, hi = envelope[col]
+                y_top = mid_y - int(hi * half_h)
+                y_bot = mid_y - int(lo * half_h)
+                if y_top == y_bot:
+                    y_bot += 1
+                hue = (col * 0.06180339887) % 1.0
+                r, g, b = colorsys.hsv_to_rgb(hue, 0.65, 1.0)
+                draw.line([(x1 + px, y_top), (x1 + px, y_bot)], fill=(int(r * 255), int(g * 255), int(b * 255)))
+
+        needle_x = (x1 + x2) // 2
+        draw.line([(needle_x, y1), (needle_x, y2)], fill=deck_color, width=2)
 
     def display_loop(self):
         """Continuously render display"""

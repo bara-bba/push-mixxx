@@ -29,17 +29,17 @@ def check_push2():
     push2 = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
     
     if push2 is None:
-        print("❌ Push 2 NOT detected")
+        print("[X] Push 2 NOT detected")
         print()
         print("Possible reasons:")
         print("1. Push 2 is not connected")
         print("2. Push 2 is not powered on")
         print("3. USB cable issue")
         print()
-        print("✓ This is safe - no driver needed for detection")
+        print("This is safe - no driver needed for detection")
         return False
-    
-    print("✅ Push 2 DETECTED!")
+
+    print("[OK] Push 2 DETECTED!")
     print()
     print("Device Information:")
     print(f"  Vendor ID:  0x{push2.idVendor:04x} (Ableton)")
@@ -64,31 +64,31 @@ def check_push2():
     try:
         # Try to claim interface (this will fail without driver)
         if push2.is_kernel_driver_active(0):
-            print("✓ Kernel driver is active (default Windows driver)")
+            print("[OK] Kernel driver is active (default Windows driver)")
             print()
             print("To use Push 2 with this project, you need to:")
             print("1. Install libusb driver using Zadig")
-            print("2. See INSTALL_LIBUSB_WINDOWS.md for instructions")
+            print("2. See docs/install-libusb-windows.md for instructions")
             print()
-            print("⚠️  NOTE: This will temporarily disable Push 2 in Ableton Live")
+            print("[!] NOTE: This will temporarily disable Push 2 in Ableton Live")
             print("   (You can easily reverse it - see the guide)")
         else:
-            print("✓ No kernel driver active")
+            print("[OK] No kernel driver active")
             print("  Attempting to claim interface...")
             
             try:
                 usb.util.claim_interface(push2, 0)
-                print("✅ SUCCESS! Interface claimed - libusb driver is working!")
+                print("[OK] SUCCESS! Interface claimed - libusb driver is working!")
                 print()
                 print("You can now run:")
-                print("  python test_push2.py")
+                print("  python utils/test-push2.py")
                 usb.util.release_interface(push2, 0)
                 return True
             except usb.core.USBError as e:
-                print(f"❌ Cannot claim interface: {e}")
+                print(f"[X] Cannot claim interface: {e}")
                 print()
                 print("You need to install libusb driver using Zadig")
-                print("See INSTALL_LIBUSB_WINDOWS.md")
+                print("See docs/install-libusb-windows.md")
     except Exception as e:
         print(f"Status check: {e}")
     

@@ -62,7 +62,7 @@ class Push2Display:
             usb.util.claim_interface(self.device, 0)
             
             self.connected = True
-            print("✓ Connected to Push 2")
+            print("[OK] Connected to Push 2")
             
             # Set display brightness
             self.set_brightness(200)
@@ -70,7 +70,7 @@ class Push2Display:
             return True
             
         except Exception as e:
-            print(f"✗ Failed to connect to Push 2: {e}")
+            print(f"[X] Failed to connect to Push 2: {e}")
             return False
     
     def disconnect(self):

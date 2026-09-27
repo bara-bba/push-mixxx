@@ -21,7 +21,7 @@ def find_push2():
     device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
     
     if device is None:
-        print("✗ Push 2 not found!")
+        print("[X] Push 2 not found!")
         print("\nTroubleshooting:")
         print("1. Is Push 2 powered on?")
         print("2. Is USB cable connected?")
@@ -29,14 +29,14 @@ def find_push2():
         print("4. On Linux: Are udev rules installed?")
         return None
     
-    print(f"✓ Found Push 2: {device}")
+    print(f"[OK] Found Push 2: {device}")
     
     # Detach kernel driver if necessary (Linux only)
     try:
         if device.is_kernel_driver_active(0):
             try:
                 device.detach_kernel_driver(0)
-                print("✓ Detached kernel driver")
+                print("[OK] Detached kernel driver")
             except usb.core.USBError as e:
                 print(f"Warning: Could not detach kernel driver: {e}")
     except NotImplementedError:
@@ -46,9 +46,9 @@ def find_push2():
     # Claim the interface
     try:
         usb.util.claim_interface(device, 0)
-        print("✓ Claimed USB interface")
+        print("[OK] Claimed USB interface")
     except usb.core.USBError as e:
-        print(f"✗ Could not claim interface: {e}")
+        print(f"[X] Could not claim interface: {e}")
         return None
     
     return device
@@ -182,7 +182,7 @@ def main():
         sys.exit(1)
     
     print()
-    print("✓ Push 2 connected successfully!")
+    print("[OK] Push 2 connected successfully!")
     print()
     print("Sending test pattern...")
     print("Press Ctrl+C to stop")
@@ -220,7 +220,7 @@ def main():
             usb.util.dispose_resources(device)
         except:
             pass
-        print("✓ Test complete!")
+        print("[OK] Test complete!")
 
 
 if __name__ == '__main__':

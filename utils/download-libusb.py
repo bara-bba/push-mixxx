@@ -17,10 +17,10 @@ def download_file(url, filename):
     print(f"Downloading {filename}...")
     try:
         urllib.request.urlretrieve(url, filename)
-        print(f"✓ Downloaded {filename}")
+        print(f"[OK] Downloaded {filename}")
         return True
     except Exception as e:
-        print(f"✗ Failed to download: {e}")
+        print(f"[X] Failed to download: {e}")
         return False
 
 def main():
@@ -33,7 +33,7 @@ def main():
     
     # Check if libusb-1.0.dll already exists
     if os.path.exists("libusb-1.0.dll"):
-        print("✓ libusb-1.0.dll already exists in current directory")
+        print("[OK] libusb-1.0.dll already exists in current directory")
         print()
         response = input("Re-download? (y/n): ")
         if response.lower() != 'y':
@@ -75,7 +75,7 @@ def main():
         # Try to download
         if download_file(LIBUSB_URL, "libusb-1.0.27.7z"):
             print()
-            print("✓ Downloaded libusb-1.0.27.7z")
+            print("[OK] Downloaded libusb-1.0.27.7z")
             print()
             print("Next steps:")
             print("1. Extract libusb-1.0.27.7z (use 7-Zip)")

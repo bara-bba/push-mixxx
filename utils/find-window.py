@@ -55,8 +55,8 @@ def capture_preview(x, y, width, height, output_file="preview.png"):
         img.save(output_file)
         img_resized.save(output_file.replace('.png', '_push2.png'))
         
-        print(f"✓ Saved preview to {output_file}")
-        print(f"✓ Saved Push 2 preview to {output_file.replace('.png', '_push2.png')}")
+        print(f"[OK] Saved preview to {output_file}")
+        print(f"[OK] Saved Push 2 preview to {output_file.replace('.png', '_push2.png')}")
 
 
 def interactive_mode():

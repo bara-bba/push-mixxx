@@ -9,10 +9,15 @@
 //
 //  SysEx frame: F0 7D <type> <deck> <payload...> F7
 //    manufacturer id 0x7D = non-commercial/educational (MIDI spec reserved)
-//    type 0x01 TRACK: deck(0/1) playing(0/1) bpmHi bpmLo posHi posLo
-//                      title-bytes(7-bit, <=24) 0x00 artist-bytes(7-bit, <=24)
+//    type 0x01 TRACK: deck(0/1) playing(0/1) bpmHi bpmLo posHi posLo durHi durLo
 //         bpm is bpm*10 as a 14-bit value (hi/lo 7-bit); pos is playposition
-//         (0.0-1.0) scaled to 14-bit.
+//         (0.0-1.0) scaled to 14-bit; dur is track duration in whole seconds
+//         (14-bit, up to ~4.5h). NOTE: Mixxx does not expose track title/
+//         artist to controller scripts at all (engine.getValue has no such
+//         control - see github.com/mixxxdj/mixxx/issues/6898, open since
+//         2013, unresolved). push-screen's mixxx-midi-bridge.py instead
+//         identifies the loaded track by matching (duration, bpm) against
+//         Mixxx's own library database and reads title/artist/art from there.
 //    type 0x02 MIXER: crossfader(0-127)
 //    type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) —
 //         mirrors pusher-script.js's PUSH2T.scene, read as a shared global
@@ -29,18 +34,7 @@ PUSH2BRIDGE.TYPE_MIXER = 0x02;
 PUSH2BRIDGE.TYPE_SCENE = 0x03;
 PUSH2BRIDGE.TYPE_FX = 0x04;
 PUSH2BRIDGE.POLL_MS = 200;
-PUSH2BRIDGE.MAX_TEXT = 24;
 PUSH2BRIDGE.SCENE_IDS = { 'none': 0, 'browse': 1, 'device': 2, 'mix': 3, 'clip': 4 };
-
-PUSH2BRIDGE.encodeText = function(str) {
-    var out = [];
-    if (!str) return out;
-    for (var i = 0; i < str.length && out.length < PUSH2BRIDGE.MAX_TEXT; i++) {
-        var code = str.charCodeAt(i);
-        out.push(code < 128 ? code : 0x3F); // '?' for non-ASCII
-    }
-    return out;
-};
 
 PUSH2BRIDGE.split14 = function(value) {
     var v = Math.max(0, Math.min(16383, Math.round(value)));
@@ -51,18 +45,14 @@ PUSH2BRIDGE.sendTrack = function(deckIndex, group) {
     var playing = engine.getValue(group, "play") ? 1 : 0;
     var bpm = engine.getValue(group, "bpm") || 0;
     var pos = engine.getValue(group, "playposition") || 0;
-    var title = engine.getValue(group, "title") || "";
-    var artist = engine.getValue(group, "artist") || "";
+    var duration = engine.getValue(group, "duration") || 0;
 
     var bpm14 = PUSH2BRIDGE.split14(bpm * 10);
     var pos14 = PUSH2BRIDGE.split14(pos * 16383);
+    var dur14 = PUSH2BRIDGE.split14(duration);
 
     var msg = [0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_TRACK, deckIndex,
-        playing, bpm14[0], bpm14[1], pos14[0], pos14[1]];
-    msg = msg.concat(PUSH2BRIDGE.encodeText(title));
-    msg.push(0x00);
-    msg = msg.concat(PUSH2BRIDGE.encodeText(artist));
-    msg.push(0xF7);
+        playing, bpm14[0], bpm14[1], pos14[0], pos14[1], dur14[0], dur14[1], 0xF7];
 
     midi.sendSysexMsg(msg, msg.length);
 };

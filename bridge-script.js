@@ -33,7 +33,7 @@ PUSH2BRIDGE.TYPE_TRACK = 0x01;
 PUSH2BRIDGE.TYPE_MIXER = 0x02;
 PUSH2BRIDGE.TYPE_SCENE = 0x03;
 PUSH2BRIDGE.TYPE_FX = 0x04;
-PUSH2BRIDGE.POLL_MS = 200;
+PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
 PUSH2BRIDGE.SCENE_IDS = { 'none': 0, 'browse': 1, 'device': 2, 'mix': 3, 'clip': 4 };
 
 PUSH2BRIDGE.split14 = function(value) {

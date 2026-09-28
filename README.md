@@ -98,6 +98,8 @@ A scene decides what the top row (CC102-109) and the touch strip do (`PUSH2T.sce
 - **Device / Mix / Clip**: reserved (enter/leave only, LED lit while active). Pressing any scene button leaves Browse and un-maximizes the library.
 - **No scene**: strip = pitch of the selected deck; strip LEDs show a single dot (deck pitch, or center with no deck selected). Strip LEDs are always host-drawn via SysEx (`midi.sendSysexMsg`; config byte 0x67), never Push's own display.
 - Arrows only navigate the library (no preview seeking); the strip does the seeking.
+- **Device scene is the default/resting scene** (`PUSH2T.scene` starts as `'device'`; toggling any scene off returns to it, not to a scene-less state).
+- **CUP fix (2026-09-28)**: stopped + a cue already set now ALWAYS jumps/previews from it, regardless of playhead position — fixes a freshly-loaded stopped track (playhead at 0 by default) silently overwriting its real cue on the first press. Relocating the cue while stopped now needs SHIFT+CUP explicitly, replacing the old "off-cue = relocate" auto-detection.
 - **Lower row (CC20-27)**: Load A/B (CC20/CC24) load the selected track; Prev/Next (CC21/22, CC25/26) no longer load tracks — in every scene they toggle FX unit 1 / 2 on that deck's channel (`EffectRack1_EffectUnitN` `group_[ChannelX]_enable`; idle = your color, on = `FX_ON_COLOR`); CC23/CC27 = deck select.
 - **Mix scene**: encoders CC71-74 / buttons CC102-105 = FX unit 1, CC75-78 / CC106-109 = FX unit 2. Knobs 1-3 = the effects' knob (`meta`), buttons 1-3 = effect on/off, knob 4 = unit `mix` (master), button 4 = reset the 3 knobs to `FX_KNOB_DEFAULT`. Jog/gain encoders and the top-row sort/gain-reset buttons are taken over while in this scene.
 

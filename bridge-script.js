@@ -24,6 +24,9 @@
 //         (Mixxx loads all controller scripts into one JS engine; guarded
 //         with typeof in case pusher-script.js isn't loaded).
 //    type 0x04 FX: unit(0/1) mixKnob(0-127) eff1On eff2On eff3On (0/1 each)
+//
+//  Device scene has no bridge frame - it's shown via push-screen's own
+//  second skin-capture page (Pusher160's ExpandedRow section), not SysEx.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var PUSH2BRIDGE = {};

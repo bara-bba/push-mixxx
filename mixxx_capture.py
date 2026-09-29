@@ -1,0 +1,167 @@
+"""
+Captures the custom "Pusher160" Mixxx skin (push-mixxx/skins/push2, installed
+at %LOCALAPPDATA%/Mixxx/skins/Pusher160) and sends it straight to the Push 2.
+
+Everything is done IN THE SKIN - this module does a straight screen capture
++ resize to 960x160, nothing more. No cropping, rotating, or reassembling
+pieces in Python. That matters for the real deployment target: a headless
+Pi3 running Mixxx on a virtual display with the Push 2 as the only screen,
+so whatever's wrong with the layout has to be fixed in the skin itself
+(Pusher160/skin.xml), not patched around here.
+
+Why capture the skin at all instead of decoding audio/drawing our own
+overlay: the skin has direct access to track metadata/cover art (unlike
+Mixxx's controller scripting API, which has never exposed title/artist -
+github.com/mixxxdj/mixxx/issues/6898) and renders waveforms, cue points and
+loop markers natively - no reason to reinvent any of that.
+
+Pusher160 is display-only - no transport buttons/library, since Push 2's
+own hardware buttons already control playback via push-mixxx's
+pusher-script.js.
+
+Self-calibrating (Windows only): finds the live Mixxx window via Win32 and
+reads its actual client-area bounds every time, rather than trusting a
+hardcoded screen position - the window moves/resizes across restarts (e.g.
+after a forced taskkill, which doesn't let Mixxx save its geometry) and
+this dev machine isn't always in a state where it can be repositioned. The
+native title bar + menu bar sit inside the client rect (Win32 doesn't
+separate them out), so MENU_BAR_HEIGHT below crops those off to leave just
+the skin's own content. On the real Pi3 deployment (headless, virtual
+display, no window chrome at all) this self-calibration is moot - swap in
+a fixed region matching that display.
+"""
+
+import ctypes
+from ctypes import wintypes
+
+import mss
+from PIL import Image
+
+MENU_BAR_HEIGHT = 21  # File/Library/View/Options/Help row, inside the client rect -
+# measured directly (client origin y=131, content top y=152).
+
+# Fallback if the window can't be found (Mixxx not running / not on Windows) -
+# last-known-good position, in case a plain grab is still better than nothing.
+FALLBACK_REGION = {"left": 107, "top": 226, "width": 1025, "height": 160}
+
+TARGET_SIZE = (960, 160)
+
+user32 = ctypes.windll.user32 if hasattr(ctypes, 'windll') else None
+
+
+class RECT(ctypes.Structure):
+    _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG),
+                ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
+
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+
+def _find_mixxx_hwnd():
+    """Finds the Mixxx main window by walking top-level windows and matching
+    the process image name - title-based lookup breaks once a track is
+    loaded (title becomes "Artist - Title | Mixxx")."""
+    if user32 is None:
+        return None
+
+    result = []
+
+    def callback(hwnd, lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            import psutil
+            proc = psutil.Process(pid.value)
+            if proc.name().lower() == 'mixxx.exe':
+                result.append(hwnd)
+                return False
+        except Exception:
+            pass
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows(WNDENUMPROC(callback), 0)
+    return result[0] if result else None
+
+
+# Pusher160 stacks two 960x160 "pages" vertically inside one taller window
+# (MinimumSize 960,320): page 0 = the default/browse view (deck info +
+# waveforms), page 1 = the expanded "Device" scene. Both are always
+# rendered by Mixxx; push-screen just crops whichever page the active
+# scene needs.
+PAGE_HEIGHT = 160
+# BrowsePage measures ~182px in practice (padding/margins from the
+# WaveA/WaveBox wrapper borders plus the WidgetGroup layout spacing between
+# the two pages), well more than the nominal 160 - measured directly by
+# scanning a live capture pixel row-by-row for where the waveform's last
+# non-black pixel ends vs. where the Device page's own content starts.
+DEVICE_PAGE_OFFSET = 182
+PAGE_OFFSETS = {"browse": 0, "device": DEVICE_PAGE_OFFSET}
+
+
+def _live_content_region(page="browse"):
+    hwnd = _find_mixxx_hwnd()
+    if not hwnd:
+        return None
+
+    client = RECT()
+    if not user32.GetClientRect(hwnd, ctypes.byref(client)):
+        return None
+
+    origin = POINT(0, 0)
+    if not user32.ClientToScreen(hwnd, ctypes.byref(origin)):
+        return None
+
+    # The skin's pages are fixed 960 wide; anything past that is empty window
+    # background, and including it would squish the frame on resize.
+    width = min(client.right - client.left, TARGET_SIZE[0])
+    total_height = client.bottom - client.top - MENU_BAR_HEIGHT
+    if width <= 0 or total_height <= 0:
+        return None
+
+    page_top = origin.y + MENU_BAR_HEIGHT + PAGE_OFFSETS.get(page, 0)
+    height = min(PAGE_HEIGHT, total_height - PAGE_OFFSETS.get(page, 0))
+    if height <= 0:
+        return None
+
+    return {"left": origin.x, "top": page_top, "width": width, "height": height}
+
+
+class MixxxSkinCapture:
+    def __init__(self, region=None, page="browse"):
+        self._fixed_region = region  # if given, skip self-calibration
+        self._page = page
+        self._sct = None
+
+    def _ensure_sct(self):
+        if self._sct is None:
+            self._sct = mss.mss()
+        return self._sct
+
+    def capture(self):
+        """Grabs this instance's page (self-calibrated each call unless a
+        fixed region was passed to __init__) and resizes to exactly
+        960x160. Returns None on any capture failure (window not found/
+        closed/minimized) rather than raising - callers should keep showing
+        the last good frame."""
+        region = self._fixed_region or _live_content_region(self._page) or FALLBACK_REGION
+
+        try:
+            sct = self._ensure_sct()
+            shot = sct.grab(region)
+            img = Image.frombytes('RGB', shot.size, shot.bgra, 'raw', 'BGRX')
+        except Exception:
+            self._sct = None  # force reconnect next time
+            return None
+
+        if img.size == TARGET_SIZE:
+            return img
+        return img.resize(TARGET_SIZE, Image.BILINEAR)
+
+    def close(self):
+        if self._sct is not None:
+            self._sct.close()
+            self._sct = None

@@ -274,6 +274,9 @@ PUSH2T.init = function (id, debugging) {
         PUSH2T.connectDeck('[Channel2]', 'B');
         PUSH2T.connectRecording();
         PUSH2T.drawStaticButtons();
+        // The skin (and its [Skin],pusher_scene control) loads after controller
+        // init, so resync the published scene once it exists.
+        engine.beginTimer(1000, PUSH2T.publishScene, true);
         print('[PUSH2T] Push 2 Pusher mapping initialized.');
     } catch (e) {
         print('[PUSH2T] ERROR during init: ' + e);
@@ -802,8 +805,10 @@ PUSH2T.drawStaticButtons = function () {
     // CC85 is Push 2's Play button (RGB): value = palette index.
     PUSH2T.safeConnect('[Skin]', 'show_maximized_library', function (v) {
         PUSH2T.setCC(0x55, v ? PUSH2T.slots['C85'].on : PUSH2T.slots['C85'].off);
+        var prevScene = PUSH2T.scene;
         if (v) { PUSH2T.scene = 'browse'; }
         else if (PUSH2T.scene === 'browse') { PUSH2T.scene = 'device'; }
+        if (PUSH2T.scene !== prevScene) { PUSH2T.publishScene(); }
         PUSH2T.drawTopRow();
         PUSH2T.drawScenes();
         if (v) { PUSH2T.focusTrackTable(); }
@@ -1440,9 +1445,19 @@ PUSH2T.SORT_NAMES = { 104: 'Title', 105: 'Artist', 106: 'Album', 107: 'BPM',
 PUSH2T.scene = 'device';   // resting/default scene
 PUSH2T.inLibraryMode = function () { return PUSH2T.scene === 'browse'; };
 
+// Each Mixxx controller runs in its own JS engine, so other scripts can't read
+// PUSH2T.scene. Publish it on [Skin],pusher_scene (created by the Pusher160
+// skin's manifest): the skin switches between its Device and Browse pages on
+// it, and bridge-script.js forwards it to push-screen.
+PUSH2T.SCENE_IDS = { 'none': 0, 'browse': 1, 'device': 2, 'mix': 3, 'clip': 4 };
+PUSH2T.publishScene = function () {
+    engine.setValue('[Skin]', 'pusher_scene', PUSH2T.SCENE_IDS[PUSH2T.scene] || 0);
+};
+
 PUSH2T.setScene = function (name) {
     var wasBrowse = (PUSH2T.scene === 'browse');
     PUSH2T.scene = name;
+    PUSH2T.publishScene();
     if (wasBrowse && name !== 'browse') {
         engine.setValue('[Skin]', 'show_maximized_library', 0);   // leave library view
     }

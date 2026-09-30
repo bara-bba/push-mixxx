@@ -20,13 +20,13 @@
 //         Mixxx's own library database and reads title/artist/art from there.
 //    type 0x02 MIXER: crossfader(0-127)
 //    type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) —
-//         mirrors pusher-script.js's PUSH2T.scene, read as a shared global
-//         (Mixxx loads all controller scripts into one JS engine; guarded
-//         with typeof in case pusher-script.js isn't loaded).
+//         pusher-script.js's PUSH2T.scene. Each controller has its own JS
+//         engine, so it's read from [Skin],pusher_scene, which
+//         pusher-script.js publishes and the Pusher160 skin creates.
 //    type 0x04 FX: unit(0/1) mixKnob(0-127) eff1On eff2On eff3On (0/1 each)
 //
-//  Device scene has no bridge frame - it's shown via push-screen's own
-//  second skin-capture page (Pusher160's ExpandedRow section), not SysEx.
+//  Device vs Browse page switching happens inside the Pusher160 skin itself
+//  (same control); push-screen only needs SCENE for its Mix FX overlay.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var PUSH2BRIDGE = {};
@@ -37,7 +37,10 @@ PUSH2BRIDGE.TYPE_MIXER = 0x02;
 PUSH2BRIDGE.TYPE_SCENE = 0x03;
 PUSH2BRIDGE.TYPE_FX = 0x04;
 PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
-PUSH2BRIDGE.SCENE_IDS = { 'none': 0, 'browse': 1, 'device': 2, 'mix': 3, 'clip': 4 };
+PUSH2BRIDGE.SCENE_NAMES = ['none', 'browse', 'device', 'mix', 'clip'];
+PUSH2BRIDGE.sceneId = 0;
+PUSH2BRIDGE.sceneConn = null;
+PUSH2BRIDGE.sceneRetryTicks = 0;
 
 PUSH2BRIDGE.split14 = function(value) {
     var v = Math.max(0, Math.min(16383, Math.round(value)));
@@ -66,13 +69,23 @@ PUSH2BRIDGE.sendMixer = function() {
     midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_MIXER, cf127, 0xF7], 5);
 };
 
+// [Skin],pusher_scene only exists once the skin has loaded, which is after
+// this script's init - connect lazily, retrying every ~2s until it exists.
+PUSH2BRIDGE.connectScene = function() {
+    if (PUSH2BRIDGE.sceneConn || PUSH2BRIDGE.sceneRetryTicks-- > 0) { return; }
+    PUSH2BRIDGE.sceneRetryTicks = 50;
+    PUSH2BRIDGE.sceneConn = engine.makeConnection('[Skin]', 'pusher_scene', function(v) {
+        PUSH2BRIDGE.sceneId = Math.round(v);
+    });
+    if (PUSH2BRIDGE.sceneConn) { PUSH2BRIDGE.sceneConn.trigger(); }
+};
+
 PUSH2BRIDGE.currentScene = function() {
-    return (typeof PUSH2T !== 'undefined' && PUSH2T.scene) ? PUSH2T.scene : 'none';
+    return PUSH2BRIDGE.SCENE_NAMES[PUSH2BRIDGE.sceneId] || 'none';
 };
 
 PUSH2BRIDGE.sendScene = function() {
-    var id = PUSH2BRIDGE.SCENE_IDS[PUSH2BRIDGE.currentScene()] || 0;
-    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_SCENE, id, 0xF7], 5);
+    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_SCENE, PUSH2BRIDGE.sceneId, 0xF7], 5);
 };
 
 PUSH2BRIDGE.sendFxUnit = function(unitIndex) {
@@ -92,6 +105,7 @@ PUSH2BRIDGE.sendFxUnit = function(unitIndex) {
 };
 
 PUSH2BRIDGE.tick = function() {
+    PUSH2BRIDGE.connectScene();
     PUSH2BRIDGE.sendTrack(0, "[Channel1]");
     PUSH2BRIDGE.sendTrack(1, "[Channel2]");
     PUSH2BRIDGE.sendMixer();

@@ -2,20 +2,18 @@
 """
 MIDI Bridge between Mixxx and Push 2.
 
-Default view (scene none/browse/clip) is a straight screen capture of the
-custom "Pusher160" Mixxx skin's first page (push-mixxx/skins/push2) - a
-display-only 960x320 skin (two stacked 960x160 pages) showing cover art +
-title/artist/bpm + waveform per deck, natively (no coordinate hunting, no
-ffmpeg decode, no library DB matching: the skin has direct access to track
-metadata Mixxx never exposes to controller scripts). Device scene captures
-the skin's second page instead (expanded per-deck view: bigger art, elapsed/
-remaining time, pitch, hotcue row). See mixxx_capture.py for why and the
-calibrated capture regions.
+The display is a straight screen capture of the custom "Pusher160" Mixxx
+skin (push-mixxx/skins/push2), a display-only 960x160 skin that switches
+itself between its Browse page (parallel waveforms) and its Device page
+(Traktor-style expanded decks) on the push-mixxx scene - so every scene
+except Mix is just "capture whatever the skin shows". The skin has direct
+access to track metadata Mixxx never exposes to controller scripts. See
+mixxx_capture.py.
 
 The Mix-scene FX overlay still needs live data from push-mixxx's
 bridge-script.js (functionprefix PUSH2BRIDGE, bound to a virtual MIDI port
 such as loopMIDI "Mixxx Bridge" - see docs/mixxx-midi-setup.md), since FX
-unit state and the active push-mixxx scene aren't visible in the skin.
+unit state isn't visible in the skin.
 
 SysEx frame: F0 7D <type> <deck> <payload...> F7
   type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) - mirrors
@@ -79,10 +77,8 @@ class MixxxMidiBridge:
         self.running = False
         self.midi_in = None
         self.midi_out = None
-        self.skin_capture = MixxxSkinCapture(page="browse")
-        self.device_capture = MixxxSkinCapture(page="device")
+        self.skin_capture = MixxxSkinCapture()
         self._last_skin_frame = None
-        self._last_device_frame = None
 
     def list_midi_ports(self):
         """List available MIDI ports"""
@@ -174,17 +170,7 @@ class MixxxMidiBridge:
             self.render_mix_scene(draw, font_large, font_medium, font_small)
             return img
 
-        if self.state.scene == 'device':
-            frame = self.device_capture.capture()
-            if frame is not None:
-                self._last_device_frame = frame
-                return frame
-            if self._last_device_frame is not None:
-                return self._last_device_frame
-            return self._not_found_frame()
-
-        # Default / browse / clip (no dedicated view defined yet): straight
-        # capture of the Pusher160 skin's first page
+        # Every other scene: the skin already shows the right page
         frame = self.skin_capture.capture()
         if frame is not None:
             self._last_skin_frame = frame
@@ -276,7 +262,6 @@ class MixxxMidiBridge:
         if self.midi_out:
             self.midi_out.close()
         self.skin_capture.close()
-        self.device_capture.close()
         self.push2.disconnect()
         print("Bridge stopped")
 

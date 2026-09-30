@@ -42,7 +42,7 @@ MENU_BAR_HEIGHT = 21  # File/Library/View/Options/Help row, inside the client re
 
 # Fallback if the window can't be found (Mixxx not running / not on Windows) -
 # last-known-good position, in case a plain grab is still better than nothing.
-FALLBACK_REGION = {"left": 107, "top": 226, "width": 1025, "height": 160}
+FALLBACK_REGION = {"left": 108, "top": 152, "width": 960, "height": 160}
 
 TARGET_SIZE = (960, 160)
 
@@ -87,22 +87,10 @@ def _find_mixxx_hwnd():
     return result[0] if result else None
 
 
-# Pusher160 stacks two 960x160 "pages" vertically inside one taller window
-# (MinimumSize 960,320): page 0 = the default/browse view (deck info +
-# waveforms), page 1 = the expanded "Device" scene. Both are always
-# rendered by Mixxx; push-screen just crops whichever page the active
-# scene needs.
-PAGE_HEIGHT = 160
-# BrowsePage measures ~182px in practice (padding/margins from the
-# WaveA/WaveBox wrapper borders plus the WidgetGroup layout spacing between
-# the two pages), well more than the nominal 160 - measured directly by
-# scanning a live capture pixel row-by-row for where the waveform's last
-# non-black pixel ends vs. where the Device page's own content starts.
-DEVICE_PAGE_OFFSET = 182
-PAGE_OFFSETS = {"browse": 0, "device": DEVICE_PAGE_OFFSET}
-
-
-def _live_content_region(page="browse"):
+# Pusher160 shows one 960x160 page at a time (Browse or Device, switched
+# inside the skin on the push-mixxx scene), so the capture is always just
+# the top-left 960x160 of the content area.
+def _live_content_region():
     hwnd = _find_mixxx_hwnd()
     if not hwnd:
         return None
@@ -118,22 +106,16 @@ def _live_content_region(page="browse"):
     # The skin's pages are fixed 960 wide; anything past that is empty window
     # background, and including it would squish the frame on resize.
     width = min(client.right - client.left, TARGET_SIZE[0])
-    total_height = client.bottom - client.top - MENU_BAR_HEIGHT
-    if width <= 0 or total_height <= 0:
+    height = min(client.bottom - client.top - MENU_BAR_HEIGHT, TARGET_SIZE[1])
+    if width <= 0 or height <= 0:
         return None
 
-    page_top = origin.y + MENU_BAR_HEIGHT + PAGE_OFFSETS.get(page, 0)
-    height = min(PAGE_HEIGHT, total_height - PAGE_OFFSETS.get(page, 0))
-    if height <= 0:
-        return None
-
-    return {"left": origin.x, "top": page_top, "width": width, "height": height}
+    return {"left": origin.x, "top": origin.y + MENU_BAR_HEIGHT, "width": width, "height": height}
 
 
 class MixxxSkinCapture:
-    def __init__(self, region=None, page="browse"):
+    def __init__(self, region=None):
         self._fixed_region = region  # if given, skip self-calibration
-        self._page = page
         self._sct = None
 
     def _ensure_sct(self):
@@ -142,12 +124,12 @@ class MixxxSkinCapture:
         return self._sct
 
     def capture(self):
-        """Grabs this instance's page (self-calibrated each call unless a
+        """Grabs the skin's visible page (self-calibrated each call unless a
         fixed region was passed to __init__) and resizes to exactly
         960x160. Returns None on any capture failure (window not found/
         closed/minimized) rather than raising - callers should keep showing
         the last good frame."""
-        region = self._fixed_region or _live_content_region(self._page) or FALLBACK_REGION
+        region = self._fixed_region or _live_content_region() or FALLBACK_REGION
 
         try:
             sct = self._ensure_sct()

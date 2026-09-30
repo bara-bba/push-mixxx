@@ -729,7 +729,7 @@ PUSH2T.gainColor = function (gain) {
 
 // Top row LEDs: library mode -> all 8 sort buttons lit; otherwise the Gain
 // Reset ones show gain color and the rest are off.
-// ─── MIX SCENE: 8 encoders + 8 buttons = 2 effect units ─────────────────────
+// ─── CLIP SCENE: 8 encoders + 8 buttons = 2 effect units ────────────────────
 // Encoders CC71-74 / buttons CC102-105 = FX unit 1; encoders CC75-78 / buttons
 // CC106-109 = FX unit 2. Per unit: knobs 1-3 = the 3 effects' knob (`meta`),
 // buttons 1-3 = those effects' on/off; knob 4 = unit master (`mix`); button 4
@@ -766,7 +766,7 @@ PUSH2T.fxButton = function (cc, v) {
     }
 };
 
-PUSH2T.drawMixButtons = function () {
+PUSH2T.drawMixButtons = function () {  // renders the Clip scene's FX layout
     [1, 2].forEach(function (u) {
         for (var idx = 0; idx < 4; idx++) {
             var cc = 102 + (u - 1) * 4 + idx, color;
@@ -780,7 +780,7 @@ PUSH2T.drawMixButtons = function () {
 };
 
 PUSH2T.drawTopRow = function () {
-    if (PUSH2T.scene === 'mix') {
+    if (PUSH2T.scene === 'clip') {
         PUSH2T.drawMixButtons();
     } else if (PUSH2T.inLibraryMode()) {
         [104, 105, 106, 107, 108, 109].forEach(function (cc) {
@@ -825,7 +825,7 @@ PUSH2T.drawStaticButtons = function () {
     [1, 2].forEach(function (u) {
         for (var n = 1; n <= 3; n++) {
             PUSH2T.safeConnect(PUSH2T._fxEffGroup(u, n), 'enabled', function () {
-                if (PUSH2T.scene === 'mix') { PUSH2T.drawTopRow(); }
+                if (PUSH2T.scene === 'clip') { PUSH2T.drawTopRow(); }
             });
         }
     });
@@ -838,10 +838,10 @@ PUSH2T.drawStaticButtons = function () {
 
     // ── Gain Reset CC105 / CC109 – ON when gain != 0 dB, OFF at unity ──
     PUSH2T.safeConnect('[Channel1]', 'pregain', function (v) {
-        if (PUSH2T.scene !== 'browse' && PUSH2T.scene !== 'mix') { PUSH2T.setCC(0x69, PUSH2T.gainColor(v)); }
+        if (PUSH2T.scene !== 'browse' && PUSH2T.scene !== 'clip') { PUSH2T.setCC(0x69, PUSH2T.gainColor(v)); }
     });
     PUSH2T.safeConnect('[Channel2]', 'pregain', function (v) {
-        if (PUSH2T.scene !== 'browse' && PUSH2T.scene !== 'mix') { PUSH2T.setCC(0x6D, PUSH2T.gainColor(v)); }
+        if (PUSH2T.scene !== 'browse' && PUSH2T.scene !== 'clip') { PUSH2T.setCC(0x6D, PUSH2T.gainColor(v)); }
     });
 };
 
@@ -924,22 +924,41 @@ PUSH2T._cueColor = function (group, side) {
     return (loaded && cuePoint >= 0) ? PUSH2T.padOn(pad) : PUSH2T.padOff(pad);
 };
 
+// Shared stopped-deck decision for CUP: returns 'preview' (jump to/preview
+// the existing cue) or 'set' (set a new cue / relocate it to the cursor).
+//   No cue yet                       -> 'set'
+//   Playhead already at the cue      -> 'preview'
+//   SHIFT held                       -> 'set' (explicit relocate, always)
+//   Playhead sitting at the native
+//     start (~sample 0) and NOT the
+//     cue -> 'preview'. This is the freshly-loaded-track default position,
+//     not a deliberate scrub, so treat it the same as being at the cue
+//     instead of silently overwriting a real cue on the very first press.
+//   Otherwise (deliberately scrubbed/jogged somewhere else) -> 'set', so
+//     scrub-then-press-CUP still relocates the cue like before.
+PUSH2T.CUE_FRESH_TOLERANCE = 0.0005;
+PUSH2T._cupStoppedAction = function (group) {
+    var cuePt = engine.getValue(group, 'cue_point');
+    if (cuePt < 0) { return 'set'; }
+    var atCue = PUSH2T._playheadAtCue(group);
+    if (atCue) { return 'preview'; }
+    if (PUSH2T.shiftActive) { return 'set'; }
+    var pos = engine.getValue(group, 'playposition');
+    if (pos < PUSH2T.CUE_FRESH_TOLERANCE) { return 'preview'; }
+    return 'set';
+};
+
 PUSH2T.cupA = function (ch, ctrl, val) {
     // CUP behavior, independent of Preferences > Decks > Cue mode.
     //   Playing -> jump to cue and stop (release = no-op)
-    //   Stopped, cue already set   -> preview-play from cue; release rolls back
-    //   Stopped, no cue set yet    -> set a cue at the cursor
-    //   SHIFT held, stopped        -> always set/relocate the cue here,
-    //     replacing any existing one (deliberate "move the cue" action;
-    //     without SHIFT a freshly-loaded stopped track sitting at position 0
-    //     would otherwise silently overwrite a real cue on the first press).
+    //   Stopped -> see PUSH2T._cupStoppedAction
     PUSH2T.cupHeldA = val > 0;
     PUSH2T.setPad(PUSH2T.PAD.cueA, PUSH2T._cueColor('[Channel1]', 'A'));
     if (val > 0) {
         if (engine.getValue('[Channel1]', 'play')) {
             engine.setValue('[Channel1]', 'cue_gotoandstop', 1);
             PUSH2T.cupPreviewA = false;
-        } else if (PUSH2T.shiftActive || engine.getValue('[Channel1]', 'cue_point') < 0) {
+        } else if (PUSH2T._cupStoppedAction('[Channel1]') === 'set') {
             engine.setValue('[Channel1]', 'cue_set', 1);
             PUSH2T.cupPreviewA = false;
         } else {
@@ -960,7 +979,7 @@ PUSH2T.cupB = function (ch, ctrl, val) {
         if (engine.getValue('[Channel2]', 'play')) {
             engine.setValue('[Channel2]', 'cue_gotoandstop', 1);
             PUSH2T.cupPreviewB = false;
-        } else if (PUSH2T.shiftActive || engine.getValue('[Channel2]', 'cue_point') < 0) {
+        } else if (PUSH2T._cupStoppedAction('[Channel2]') === 'set') {
             engine.setValue('[Channel2]', 'cue_set', 1);
             PUSH2T.cupPreviewB = false;
         } else {
@@ -1415,7 +1434,7 @@ PUSH2T.SORT_NAMES = { 104: 'Title', 105: 'Artist', 106: 'Album', 107: 'BPM',
                       108: 'Key', 109: 'Duration' };
 // CC102 = preview play/pause, CC103 unused (see below).
 
-// Current scene: 'device' (default/resting) | 'browse' | 'mix' | 'clip'. Browse is
+// Current scene: 'device' (default/resting) | 'browse' | 'mix' (reserved) | 'clip' (FX). Browse is
 // tied to the library being maximized (kept in sync from the skin control);
 // pressing any other scene button leaves Browse and un-maximizes the library.
 PUSH2T.scene = 'device';   // resting/default scene
@@ -1739,15 +1758,15 @@ PUSH2T._colorTurn = function (amount) {
 // mode can select them.
 PUSH2T.vuPad = function () {};
 
-// Mix scene routing: encoders and top-row buttons act on effects instead.
-PUSH2T.fxEnc72 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(72, v); } };
-PUSH2T.fxEnc73 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(73, v); } };
-PUSH2T.fxEnc76 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(76, v); } };
-PUSH2T.fxEnc77 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(77, v); } };
+// Clip scene routing: encoders and top-row buttons act on effects instead.
+PUSH2T.fxEnc72 = function (c, t, v) { if (PUSH2T.scene === 'clip') { PUSH2T.fxEncoder(72, v); } };
+PUSH2T.fxEnc73 = function (c, t, v) { if (PUSH2T.scene === 'clip') { PUSH2T.fxEncoder(73, v); } };
+PUSH2T.fxEnc76 = function (c, t, v) { if (PUSH2T.scene === 'clip') { PUSH2T.fxEncoder(76, v); } };
+PUSH2T.fxEnc77 = function (c, t, v) { if (PUSH2T.scene === 'clip') { PUSH2T.fxEncoder(77, v); } };
 [['rateA', 71], ['gainA', 74], ['rateB', 75], ['gainB', 78]].forEach(function (e) {
     var orig = PUSH2T[e[0]];
     PUSH2T[e[0]] = function (c, t, v, st, g) {
-        if (PUSH2T.scene === 'mix') { PUSH2T.fxEncoder(e[1], v); return; }
+        if (PUSH2T.scene === 'clip') { PUSH2T.fxEncoder(e[1], v); return; }
         return orig.call(PUSH2T, c, t, v, st, g);
     };
 });
@@ -1755,7 +1774,7 @@ PUSH2T.fxEnc77 = function (c, t, v) { if (PUSH2T.scene === 'mix') { PUSH2T.fxEnc
  ['top108', 108], ['gainResetA', 105], ['gainResetB', 109]].forEach(function (e) {
     var orig = PUSH2T[e[0]];
     PUSH2T[e[0]] = function (c, t, v, st, g) {
-        if (PUSH2T.scene === 'mix') { PUSH2T.fxButton(e[1], v); return; }
+        if (PUSH2T.scene === 'clip') { PUSH2T.fxButton(e[1], v); return; }
         return orig.call(PUSH2T, c, t, v, st, g);
     };
 });

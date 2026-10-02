@@ -131,61 +131,35 @@ class Push2Display:
         
         return bgr565
     
-    def xor_frame(self, frame_data):
-        """Apply XOR pattern to frame data for signal shaping"""
-        # Convert to bytes if needed
-        if isinstance(frame_data, np.ndarray):
-            frame_bytes = frame_data.tobytes()
-        else:
-            frame_bytes = frame_data
-        
-        # Apply XOR pattern
-        xor_bytes = bytearray(frame_bytes)
-        pattern_bytes = self.XOR_PATTERN.to_bytes(4, byteorder='little')
-        
-        for i in range(len(xor_bytes)):
-            xor_bytes[i] ^= pattern_bytes[i % 4]
-        
-        return bytes(xor_bytes)
-    
+    # Each line is 960 pixels (1920 bytes) + 128 filler bytes = 2048 bytes; the
+    # XOR pattern repeats every 4 bytes, so one mask covers the whole frame.
+    LINE_PIXELS = 1024
+    _XOR_MASK = np.tile(np.frombuffer(XOR_PATTERN.to_bytes(4, byteorder='little'), dtype=np.uint8),
+                        DISPLAY_HEIGHT * LINE_PIXELS * 2 // 4)
+
     def prepare_frame(self, image):
-        """Prepare image frame for Push 2 display"""
-        # Resize to Push 2 display dimensions
+        """Prepare image frame for Push 2 display (BGR565, padded lines, XOR'd)"""
         if image.size != (self.DISPLAY_WIDTH, self.DISPLAY_HEIGHT):
             image = image.resize((self.DISPLAY_WIDTH, self.DISPLAY_HEIGHT), Image.LANCZOS)
-        
-        # Convert to BGR565
-        bgr565 = self.rgb_to_bgr565(image)
-        
-        # Prepare line data with padding
-        lines = []
-        for y in range(self.DISPLAY_HEIGHT):
-            line = bgr565[y, :]
-            line_bytes = line.tobytes()
-            
-            # Add 128 bytes of padding (filler) after each line
-            # Each line is 1920 bytes (960 pixels * 2 bytes) + 128 filler = 2048 bytes
-            padding = bytes(128)
-            line_with_padding = line_bytes + padding
-            
-            # Apply XOR pattern
-            line_xored = self.xor_frame(line_with_padding)
-            lines.append(line_xored)
-        
-        return b''.join(lines)
-    
+
+        frame = np.zeros((self.DISPLAY_HEIGHT, self.LINE_PIXELS), dtype='<u2')
+        frame[:, :self.DISPLAY_WIDTH] = self.rgb_to_bgr565(image)
+        data = frame.view(np.uint8).reshape(-1)
+        data ^= self._XOR_MASK
+        return data.tobytes()
+
     def send_frame(self, image):
         """Send a frame to Push 2 display"""
+        return self.send_prepared(self.prepare_frame(image))
+
+    def send_prepared(self, frame_data):
+        """Send an already prepare_frame()'d frame to the Push 2 display"""
         if not self.connected:
             return False
-        
+
         try:
-            # Send frame header
             self.device.write(self.BULK_EP_OUT, self.FRAME_HEADER, timeout=1000)
-            
-            # Prepare and send pixel data
-            frame_data = self.prepare_frame(image)
-            
+
             # Send in chunks (16KB recommended for efficiency)
             chunk_size = 16384
             for i in range(0, len(frame_data), chunk_size):

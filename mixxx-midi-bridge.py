@@ -4,25 +4,23 @@ MIDI Bridge between Mixxx and Push 2.
 
 The display is a straight screen capture of the custom "Pusher160" Mixxx
 skin (push-mixxx/skins/push2), a display-only 960x160 skin that switches
-itself between its Browse page (parallel waveforms) and its Device page
-(Traktor-style expanded decks) on the push-mixxx scene - so every scene
-except Mix is just "capture whatever the skin shows". The skin has direct
-access to track metadata Mixxx never exposes to controller scripts. See
-mixxx_capture.py.
+itself between its expanded-deck (Device), waveform (Mix), library (Browse)
+and FX (Clip) pages on the push-mixxx scene - so every frame is just
+"capture whatever the skin shows".
+The skin has direct access to track metadata and effect state that Mixxx
+never exposes to controller scripts. See mixxx_capture.py.
 
-The Mix-scene FX overlay still needs live data from push-mixxx's
-bridge-script.js (functionprefix PUSH2BRIDGE, bound to a virtual MIDI port
-such as loopMIDI "Mixxx Bridge" - see docs/mixxx-midi-setup.md), since FX
-unit state isn't visible in the skin.
+The SCENE frames below come from push-mixxx's bridge-script.js
+(functionprefix PUSH2BRIDGE, bound to a virtual MIDI port such as loopMIDI
+"Mixxx Bridge" - see docs/mixxx-midi-setup.md).
 
 SysEx frame: F0 7D <type> <deck> <payload...> F7
   type 0x03 SCENE: sceneId (0=none 1=browse 2=device 3=mix 4=clip) - mirrors
                     push-mixxx's PUSH2T.scene
-  type 0x04 FX: unit(0/1) mixKnob(0-127) eff1On eff2On eff3On (0/1 each) -
-                only sent while scene == mix
 """
 
 import importlib
+import threading
 import time
 
 import mido
@@ -44,28 +42,25 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
+# The Push 2 display refreshes at 60Hz; on Windows the screen capture (~23ms)
+# is what actually limits the rate - see the [display] fps log.
+TARGET_FPS = 60
+FPS_LOG_SECONDS = 5
+
 SYSEX_ID = 0x7D
 TYPE_SCENE = 0x03
-TYPE_FX = 0x04
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
 COLOR_GRAY = (110, 110, 110)
-COLOR_ORANGE = (255, 150, 0)
-COLOR_GREEN = (0, 200, 90)
-COLOR_DIM = (150, 150, 150)
 
 
 class MixxxState:
-    """State populated from PUSH2BRIDGE SysEx frames (scene + FX only -
-    track/deck info comes from the skin capture, not SysEx)."""
+    """State populated from PUSH2BRIDGE SysEx frames (everything shown on the
+    screen comes from the skin capture, not SysEx)."""
 
     def __init__(self):
         self.scene = 'none'
-        self.fx = {
-            0: {'mix': 0.0, 'effects': [False, False, False]},
-            1: {'mix': 0.0, 'effects': [False, False, False]},
-        }
 
 
 class MixxxMidiBridge:
@@ -79,6 +74,8 @@ class MixxxMidiBridge:
         self.midi_out = None
         self.skin_capture = MixxxSkinCapture()
         self._last_skin_frame = None
+        self._frame_ready = threading.Condition()
+        self._next_frame = None
 
     def list_midi_ports(self):
         """List available MIDI ports"""
@@ -142,12 +139,6 @@ class MixxxMidiBridge:
         if frame_type == TYPE_SCENE and len(data) >= 3:
             self.state.scene = SCENE_NAMES.get(data[2], 'none')
 
-        elif frame_type == TYPE_FX and len(data) >= 7:
-            unit = self.state.fx.get(data[2])
-            if unit is not None:
-                unit['mix'] = data[3] / 127.0
-                unit['effects'] = [bool(data[4]), bool(data[5]), bool(data[6])]
-
     def midi_listener(self):
         """Listen for MIDI messages from Mixxx"""
         if not self.midi_in:
@@ -160,17 +151,7 @@ class MixxxMidiBridge:
             self.process_midi_message(msg)
 
     def render_display(self):
-        """Render the Push 2 frame for whatever push-mixxx scene is active"""
-        if self.state.scene == 'mix':
-            img = Image.new('RGB', (960, 160), color=(0, 0, 0))
-            draw = ImageDraw.Draw(img)
-            font_large = _load_font(26)
-            font_medium = _load_font(18)
-            font_small = _load_font(13)
-            self.render_mix_scene(draw, font_large, font_medium, font_small)
-            return img
-
-        # Every other scene: the skin already shows the right page
+        """Render the Push 2 frame: the skin already shows the right page"""
         frame = self.skin_capture.capture()
         if frame is not None:
             self._last_skin_frame = frame
@@ -185,46 +166,39 @@ class MixxxMidiBridge:
         draw.text((320, 70), "Mixxx window not found", font=_load_font(20), fill=COLOR_GRAY)
         return img
 
-    def render_mix_scene(self, draw, font_large, font_medium, font_small):
-        """Mix scene layout: FX unit 1/2 mix level + which effects are on"""
-        mid_x = 480
-        self.draw_fx_unit(draw, self.state.fx[0], 0, 0, mid_x, 160,
-                           font_large, font_medium, font_small, "FX UNIT 1")
-        self.draw_fx_unit(draw, self.state.fx[1], mid_x, 0, 960, 160,
-                           font_large, font_medium, font_small, "FX UNIT 2")
-
-    def draw_fx_unit(self, draw, fx, x1, y1, x2, y2, font_large, font_medium, font_small, label):
-        draw.text((x1 + 10, y1 + 5), label, font=font_small, fill=COLOR_GRAY)
-
-        mix_pct = int(fx['mix'] * 100)
-        draw.text((x1 + 10, y1 + 30), f"MIX {mix_pct}%", font=font_large, fill=COLOR_ORANGE)
-
-        bar_width = x2 - x1 - 20
-        bar_fill = int(bar_width * fx['mix'])
-        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_width, y1 + 85)], outline=COLOR_GRAY)
-        draw.rectangle([(x1 + 10, y1 + 70), (x1 + 10 + bar_fill, y1 + 85)], fill=COLOR_ORANGE)
-
-        for i, on in enumerate(fx['effects']):
-            ex = x1 + 10 + i * 70
-            color = COLOR_GREEN if on else (60, 60, 60)
-            draw.rectangle([(ex, y1 + 105), (ex + 55, y1 + 135)], fill=color)
-            draw.text((ex + 15, y1 + 112), f"E{i + 1}", font=font_medium, fill=(0, 0, 0) if on else COLOR_DIM)
-
-    def display_loop(self):
-        """Continuously render display"""
-        fps = 36  # push-mixxx docs: Push 2 display supports up to 36 FPS over USB
-        frame_time = 1.0 / fps
-
+    def _frame_producer(self):
+        """Capture + convert frames, keeping only the newest for the sender."""
+        frame_time = 1.0 / TARGET_FPS
         while self.running:
-            start = time.time()
-
-            img = self.render_display()
-            self.push2.send_frame(img)
-
-            elapsed = time.time() - start
-            sleep_time = frame_time - elapsed
+            start = time.perf_counter()
+            data = self.push2.prepare_frame(self.render_display())
+            with self._frame_ready:
+                self._next_frame = data
+                self._frame_ready.notify()
+            sleep_time = frame_time - (time.perf_counter() - start)
             if sleep_time > 0:
                 time.sleep(sleep_time)
+
+    def display_loop(self):
+        """Send frames to the Push while the producer thread captures the next
+        one - capture (the slow part) overlaps the USB transfer."""
+        threading.Thread(target=self._frame_producer, daemon=True).start()
+        sent, window_start = 0, time.perf_counter()
+
+        while self.running:
+            with self._frame_ready:
+                while self._next_frame is None and self.running:
+                    self._frame_ready.wait(0.5)
+                data, self._next_frame = self._next_frame, None
+            if data is None:
+                continue
+            self.push2.send_prepared(data)
+
+            sent += 1
+            now = time.perf_counter()
+            if now - window_start >= FPS_LOG_SECONDS:
+                print(f"[display] {sent / (now - window_start):.1f} fps", flush=True)
+                sent, window_start = 0, now
 
     def start(self):
         """Start the bridge"""
@@ -237,13 +211,11 @@ class MixxxMidiBridge:
         self.running = True
 
         if self.midi_in:
-            import threading
             midi_thread = threading.Thread(target=self.midi_listener, daemon=True)
             midi_thread.start()
         else:
-            print("[!] No MIDI input connected - scene switching (Mix FX view) won't work, "
-                  "but the default skin-capture view still will. "
-                  "Run with --list-ports and --input to connect the Mixxx Bridge port.")
+            print("[!] No MIDI input connected - the display still works (the skin "
+                  "switches pages itself); only the SCENE frames are skipped.")
 
         try:
             self.display_loop()

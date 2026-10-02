@@ -98,10 +98,19 @@ Use `python utils/find-window.py` to find the right coordinates.
 
 - Display: 960x160 px, BGR565 (16-bit color)
 - USB: bulk transfer endpoint 0x01, vendor 0x2982 (Ableton), product 0x1967 (Push 2)
-- Frame rate: up to 36 FPS (30 recommended)
+- Frame rate (`mixxx-midi-bridge.py`): targets 60 FPS (the display's refresh
+  rate). Capture + conversion run in a background thread while the previous
+  frame goes out over USB, and the bridge logs the real rate every 5 s as
+  `[display] NN.N fps`. Measured on the Windows dev PC: ~56 FPS, limited by
+  the screen capture (~23 ms/frame).
 
 ## Open items
 
+- **Next step: verify the frame rate on the Raspberry Pi 3.** Run the bridge
+  there and read its `[display] NN.N fps` lines (and CPU load). The ~56 FPS
+  above is the Windows figure; on the Pi the capture (X11/virtual display)
+  and the CPU budget are different. If it's too heavy, lower `TARGET_FPS` in
+  `mixxx-midi-bridge.py`.
 - MIDI bridge does not yet send controls back to Mixxx (display-only for now).
 - Custom-render layouts (waveform, VU, effects) in
   [`docs/mixxx-integration.md`](docs/mixxx-integration.md) are design notes,

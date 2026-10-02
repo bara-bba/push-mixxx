@@ -3,7 +3,7 @@
 MIDI Bridge between Mixxx and Push 2.
 
 The display is a straight screen capture of the custom "Pusher160" Mixxx
-skin (push-mixxx/skins/push2), a display-only 960x160 skin that switches
+skin (../skins/push2 in this repo), a display-only 960x160 skin that switches
 itself between its expanded-deck (Device), waveform (Mix), library (Browse)
 and FX (Clip) pages on the push-mixxx scene - so every frame is just
 "capture whatever the skin shows".

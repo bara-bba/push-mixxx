@@ -1,5 +1,5 @@
 """
-Captures the custom "Pusher160" Mixxx skin (push-mixxx/skins/push2, installed
+Captures the custom "Pusher160" Mixxx skin (../skins/push2 in this repo, installed
 at %LOCALAPPDATA%/Mixxx/skins/Pusher160) and sends it straight to the Push 2.
 
 Everything is done IN THE SKIN - this module does a straight screen capture

@@ -13,8 +13,9 @@ Streams Mixxx DJ software to an Ableton Push 2's screen — either by mirroring 
 screen-capture region, or by rendering custom visuals from Mixxx's MIDI state.
 Works on Windows (dev/testing) and Raspbian/Linux (production).
 
-Controller mapping (Push 2 → Mixxx buttons/pads) lives in the sibling
-[push-mixxx](../push-mixxx) repo, not here — see [Related](#related).
+This folder is part of the push-mixxx repo: the controller mapping (Push 2 →
+Mixxx buttons/pads) is at the [repo root](../README.md), and the Pusher160
+skin this app captures is in [`../skins/push2`](../skins/push2).
 
 ## Modes
 

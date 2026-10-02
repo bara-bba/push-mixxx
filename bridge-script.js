@@ -3,7 +3,7 @@
 //  Companion to: bridge.midi.xml
 //  Not part of the Push 2 hardware mapping (pusher.midi.xml/pusher-script.js) —
 //  this is a second, output-only Mixxx controller bound to a virtual MIDI port
-//  (loopMIDI "Mixxx Bridge", see push-screen/docs/mixxx-midi-setup.md). It polls
+//  (loopMIDI "Mixxx Bridge", see screen/docs/mixxx-midi-setup.md). It polls
 //  deck/mixer state and pushes it as SysEx to whatever reads that port —
 //  push-screen's mixxx-midi-bridge.py renders it on the Push 2 screen.
 //

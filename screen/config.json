@@ -1,0 +1,9 @@
+{
+  "capture_region": {
+    "x": 0,
+    "y": 0,
+    "width": 1000,
+    "height": 150
+  },
+  "fps_target": 30
+}

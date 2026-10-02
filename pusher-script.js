@@ -1439,7 +1439,9 @@ PUSH2T.SORT_NAMES = { 104: 'Title', 105: 'Artist', 106: 'Album', 107: 'BPM',
                       108: 'Key', 109: 'Duration' };
 // CC102 = preview play/pause, CC103 unused (see below).
 
-// Current scene: 'device' (default/resting) | 'browse' | 'mix' (reserved) | 'clip' (FX). Browse is
+// Current scene: 'device' (default/resting) | 'browse' | 'mix' | 'clip' (FX). Mix has the same
+// controls as Device; only the Push screen differs (Device = expanded decks, Mix =
+// waveforms). Browse is
 // tied to the library being maximized (kept in sync from the skin control);
 // pressing any other scene button leaves Browse and un-maximizes the library.
 PUSH2T.scene = 'device';   // resting/default scene
@@ -1608,6 +1610,8 @@ PUSH2T.connectRecording = function () {
 // SHIFT+Right opens the selected sidebar item. (Preview seeking is done only
 // with the touch strip, never the arrows.)
 PUSH2T._arrow = function (key, v) {
+    print('[PUSH2T] arrow ' + key + ' v=' + v + ' colorMode=' + PUSH2T.colorMode +
+          ' scene=' + PUSH2T.scene + ' focused_widget(before)=' + engine.getValue('[Library]', 'focused_widget'));
     if (v <= 0 || PUSH2T.colorMode) { return; }
     if (key === 'MoveUp' || key === 'MoveDown') {
         PUSH2T.previewDirty = true;

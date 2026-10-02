@@ -23,10 +23,10 @@
 //         pusher-script.js's PUSH2T.scene. Each controller has its own JS
 //         engine, so it's read from [Skin],pusher_scene, which
 //         pusher-script.js publishes and the Pusher160 skin creates.
-//    type 0x04 FX: unit(0/1) mixKnob(0-127) eff1On eff2On eff3On (0/1 each)
 //
-//  Device vs Browse page switching happens inside the Pusher160 skin itself
-//  (same control); push-screen only needs SCENE for its Mix FX overlay.
+//  Page switching (waveforms / expanded decks / FX) happens inside the
+//  Pusher160 skin itself on the same control, so push-screen doesn't need
+//  SCENE for the display any more.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var PUSH2BRIDGE = {};
@@ -35,9 +35,7 @@ PUSH2BRIDGE.SYSEX_ID = 0x7D;
 PUSH2BRIDGE.TYPE_TRACK = 0x01;
 PUSH2BRIDGE.TYPE_MIXER = 0x02;
 PUSH2BRIDGE.TYPE_SCENE = 0x03;
-PUSH2BRIDGE.TYPE_FX = 0x04;
 PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
-PUSH2BRIDGE.SCENE_NAMES = ['none', 'browse', 'device', 'mix', 'clip'];
 PUSH2BRIDGE.sceneId = 0;
 PUSH2BRIDGE.sceneConn = null;
 PUSH2BRIDGE.sceneRetryTicks = 0;
@@ -80,28 +78,8 @@ PUSH2BRIDGE.connectScene = function() {
     if (PUSH2BRIDGE.sceneConn) { PUSH2BRIDGE.sceneConn.trigger(); }
 };
 
-PUSH2BRIDGE.currentScene = function() {
-    return PUSH2BRIDGE.SCENE_NAMES[PUSH2BRIDGE.sceneId] || 'none';
-};
-
 PUSH2BRIDGE.sendScene = function() {
     midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_SCENE, PUSH2BRIDGE.sceneId, 0xF7], 5);
-};
-
-PUSH2BRIDGE.sendFxUnit = function(unitIndex) {
-    var unit = unitIndex + 1;
-    var unitGroup = '[EffectRack1_EffectUnit' + unit + ']';
-    var mix = engine.getValue(unitGroup, 'mix') || 0; // 0.0-1.0
-    var mix127 = Math.max(0, Math.min(127, Math.round(mix * 127)));
-
-    var effOn = [0, 0, 0];
-    for (var n = 1; n <= 3; n++) {
-        var effGroup = '[EffectRack1_EffectUnit' + unit + '_Effect' + n + ']';
-        effOn[n - 1] = engine.getValue(effGroup, 'enabled') ? 1 : 0;
-    }
-
-    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_FX, unitIndex,
-        mix127, effOn[0], effOn[1], effOn[2], 0xF7], 9);
 };
 
 PUSH2BRIDGE.tick = function() {
@@ -110,10 +88,6 @@ PUSH2BRIDGE.tick = function() {
     PUSH2BRIDGE.sendTrack(1, "[Channel2]");
     PUSH2BRIDGE.sendMixer();
     PUSH2BRIDGE.sendScene();
-    if (PUSH2BRIDGE.currentScene() === 'mix') {
-        PUSH2BRIDGE.sendFxUnit(0);
-        PUSH2BRIDGE.sendFxUnit(1);
-    }
 };
 
 PUSH2BRIDGE.init = function() {

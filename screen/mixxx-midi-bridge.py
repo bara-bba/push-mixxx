@@ -20,6 +20,7 @@ SysEx frame: F0 7D <type> <deck> <payload...> F7
 """
 
 import importlib
+import subprocess
 import threading
 import time
 
@@ -54,6 +55,10 @@ SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
 PUSH_PORT_MATCH = 'Push 2 Live Port'
 CC_DELETE = 118  # push-mixxx's DELETE modifier; also closes Mixxx popups here
+CC_SETUP = 30  # unused by push-mixxx; hold to restart Mixxx
+SETUP_HOLD_SECONDS = 3
+# Needs a sudoers rule on the Pi: admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart mixxx.service
+RESTART_MIXXX_CMD = ['sudo', '-n', '/usr/bin/systemctl', 'restart', 'mixxx.service']
 
 COLOR_GRAY = (110, 110, 110)
 
@@ -76,6 +81,7 @@ class MixxxMidiBridge:
         self.midi_in = None
         self.midi_out = None
         self.push_in = None
+        self._setup_timer = None
         self.skin_capture = MixxxSkinCapture()
         self._last_skin_frame = None
         self._frame_ready = threading.Condition()
@@ -162,10 +168,27 @@ class MixxxMidiBridge:
             print(f"[!] Push buttons unavailable ({e}) - DELETE won't close popups")
 
     def _on_push_message(self, msg):
-        if msg.type == 'control_change' and msg.control == CC_DELETE and msg.value > 0:
+        if msg.type != 'control_change':
+            return
+        if msg.control == CC_DELETE and msg.value > 0:
             closed = close_mixxx_popups()
             if closed:
                 print(f"[popup] DELETE closed {closed} window(s)")
+        elif msg.control == CC_SETUP:
+            if self._setup_timer:
+                self._setup_timer.cancel()
+                self._setup_timer = None
+            if msg.value > 0:
+                self._setup_timer = threading.Timer(SETUP_HOLD_SECONDS, self._restart_mixxx)
+                self._setup_timer.daemon = True
+                self._setup_timer.start()
+
+    def _restart_mixxx(self):
+        # systemd restarts this bridge too (push2-screen Requires=mixxx)
+        print("[setup] SETUP held - restarting Mixxx", flush=True)
+        result = subprocess.run(RESTART_MIXXX_CMD, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[setup] restart failed: {result.stderr.strip()}", flush=True)
 
     def midi_listener(self):
         """Listen for MIDI messages from Mixxx"""

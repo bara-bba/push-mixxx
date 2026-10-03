@@ -35,13 +35,17 @@ EDGE = '#3A3A36'     # idle outlines
 HAIR = '#2A2A28'     # hairline rules
 LIME = '#C8F53C'     # the accent
 RED = '#FF2B1C'      # signal (end of track)
+# Darkens the already-played part of the overviews. Qt colour strings put
+# alpha first (#AARRGGBB): '#66000000' = black at 40%.
+PLAYED = '#66000000'
 ORANGE = '#E8A33A'   # cue (button + cue-point markers) - kept from the earlier look
 BLUE = '#1F4BFF'     # SYNC
 FONT = '"Arial", "Liberation Sans", "DejaVu Sans", sans-serif'
 DISPLAY = '"TAN - SPRING", "Arial", sans-serif'
 
 LOOP_SIZES = [('1/4', '0.25'), ('1/2', '0.5'), ('1', '1'), ('2', '2'), ('4', '4'), ('8', '8'), ('16', '16')]
-ROW_H = 24
+ROW_H = 28   # Device page transport/loop row
+CUE_H = 20   # Device page hotcue row (4+48+4+48+4+28+4+20 = 160)
 # ~70px-wide pads: 6px digit + 17 x 3px nbsp centers the digit ~7px from the left edge
 HOTCUE_PAD = '&#160;' * 17
 # Each deck half is fixed at 479px (+ the 2px rule = 960): with expanding halves
@@ -84,7 +88,7 @@ def loop_size_tail(obj, g, label, val):
     texts = {size: str(size) for size in LOOP_TAIL_SIZES}
     state_xml = ''.join(f'<State><Number>{i}</Number><Text>{texts.get(i, label)}</Text></State>' for i in range(n))
     return (f'<PushButton><ObjectName>{obj}</ObjectName><SizePolicy>me,f</SizePolicy>'
-            f'<MinimumSize>22,{ROW_H}</MinimumSize><MaximumSize>10000,{ROW_H}</MaximumSize>'
+            f'<MinimumSize>21,{ROW_H}</MinimumSize><MaximumSize>10000,{ROW_H}</MaximumSize>'
             f'<NumberStates>{n}</NumberStates>{state_xml}'
             f'<Connection><ConfigKey>{g},beatloop_size</ConfigKey>'
             '<ConnectValueFromWidget>false</ConnectValueFromWidget></Connection>'
@@ -154,20 +158,31 @@ def track_prop(obj, g, prop, h):
 
 
 # NumberPos ignores its <Connection> and always follows the global
-# [Controls],ShowDurationRemaining mode - set to 2 (elapsed AND remaining, one
-# wrapped two-line string) in the manifest. Each widget is clipped to one of
-# the two lines via fixed height + vertical alignment (see CSS).
+# [Controls],ShowDurationRemaining mode - set to 1 (remaining) in the manifest.
+# Only the library preview uses it; the decks use time_readout below.
 def time_remaining(d):
     return (f'<NumberPos><ObjectName>DkTimeRemain</ObjectName><Group>{d["g"]}</Group><Channel>{d["n"]}</Channel>'
             '<SizePolicy>f,f</SizePolicy><MinimumSize>74,24</MinimumSize><MaximumSize>74,24</MaximumSize></NumberPos>')
 
 
-def time_elapsed(d):
-    # narrow enough (44px) that the 12px 'elapsed  -remaining' string wraps
-    # one 11px line tall (13px): any taller and the hidden second line peeks in
-    return fixed_group('', 'horizontal', 74, 13, hspace(30) + (
-        f'<NumberPos><ObjectName>DkTimeElapsed</ObjectName><Group>{d["g"]}</Group><Channel>{d["n"]}</Channel>'
-        '<SizePolicy>f,f</SizePolicy><MinimumSize>44,13</MinimumSize><MaximumSize>44,13</MaximumSize></NumberPos>'))
+def time_readout(d, which, obj, w, h):
+    """Deck elapsed ('e') or remaining ('r') time built from the digits
+    pusher-script.js publishes on [Skin],pusher_t<n>_<which>m/s10/s1, so the
+    two readouts always tick together (see PUSH2T.publishTime)."""
+    n = d['n']
+
+    def num(key):
+        return (f'<Number><ObjectName>{obj}</ObjectName><SizePolicy>max,f</SizePolicy>'
+                f'<MinimumSize>1,{h}</MinimumSize><MaximumSize>40,{h}</MaximumSize><NumberOfDigits>0</NumberOfDigits>'
+                f'<Connection><ConfigKey>[Skin],pusher_t{n}_{which}{key}</ConfigKey></Connection></Number>')
+
+    def text(t):
+        return (f'<Label><ObjectName>{obj}</ObjectName><Text>{t}</Text><SizePolicy>max,f</SizePolicy>'
+                f'<MinimumSize>1,{h}</MinimumSize><MaximumSize>20,{h}</MaximumSize></Label>')
+
+    stretch = '<WidgetGroup><SizePolicy>me,min</SizePolicy></WidgetGroup>'
+    return fixed_group('', 'horizontal', w, h, stretch + (text('-') if which == 'r' else '')
+                       + num('m') + text(':') + num('s10') + num('s1'))
 
 
 def bpm(d):
@@ -179,6 +194,33 @@ def bpm(d):
 def deck_letter(d, h):
     return (f'<Label><ObjectName>DkLetter{d["s"]}</ObjectName><Text>{d["s"]}</Text><SizePolicy>f,f</SizePolicy>'
             f'<MinimumSize>30,{h}</MinimumSize><MaximumSize>30,{h}</MaximumSize></Label>')
+
+
+def overview_position(g):
+    """An Overview only moves its play cursor when connected to the deck's
+    playposition (as in Mixxx's own skins) - without it the cursor stays put."""
+    return (f'<Connection><ConfigKey>{g},playposition</ConfigKey>'
+            '<EmitOnDownPress>false</EmitOnDownPress></Connection>')
+
+
+def wave_marks(d, edge):
+    """Scan-style markers for the Mix page waveforms (edge = 'top' for deck A,
+    'bottom' for deck B, so the two decks' labels never meet at the seam):
+    square deck-coloured hotcue tags with just the number, an orange 'CUE'
+    data label, and the loop as a faint lime tint framed by inward-facing
+    bracket markers (scan-box corner ticks) with its length shown after it."""
+    return (f'<DefaultMark><Align>{edge}|right</Align><Color>{d["color"]}</Color><TextColor>{INK}</TextColor>'
+            '<Text>%1</Text></DefaultMark>'
+            f'<Mark><Control>cue_point</Control><Text>CUE</Text><Align>{edge}|right</Align>'
+            f'<Color>{ORANGE}</Color><TextColor>{INK}</TextColor></Mark>'
+            '<MarkRange><StartControl>loop_start_position</StartControl><EndControl>loop_end_position</EndControl>'
+            f'<EnabledControl>loop_enabled</EnabledControl><Color>{LIME}</Color><Opacity>0.07</Opacity>'
+            f'<DisabledColor>{LINE}</DisabledColor><DisabledOpacity>0.05</DisabledOpacity>'
+            f'<DurationTextColor>{LIME}</DurationTextColor><DurationTextLocation>after</DurationTextLocation></MarkRange>'
+            f'<Mark><Control>loop_start_position</Control><Icon>image/mark-loop-in.svg</Icon><Align>{edge}|right</Align>'
+            f'<Color>{LIME}</Color><TextColor>{INK}</TextColor></Mark>'
+            f'<Mark><Control>loop_end_position</Control><Icon>image/mark-loop-out.svg</Icon><Align>{edge}|left</Align>'
+            f'<Color>{LIME}</Color><TextColor>{INK}</TextColor></Mark>')
 
 
 def hotcue_mark(d, align='top'):
@@ -212,7 +254,8 @@ def deck_header(d):
         fixed_group('DkTextCol', 'vertical', 10, 48, track_prop('DkTitle', g, 'title', 24)
                     + track_prop('DkArtist', g, 'artist', 12) + track_prop('DkAlbum', g, 'album', 12), wpolicy='me'),
         hspace(6),
-        fixed_group('DkTimeCol', 'vertical', 74, 48, time_remaining(d) + time_elapsed(d) + vspace(48 - 24 - 13)),
+        fixed_group('DkTimeCol', 'vertical', 74, 48, time_readout(d, 'r', 'DkTimeRemain', 74, 24)
+                    + time_readout(d, 'e', 'DkTimeElapsed', 74, 12) + vspace(48 - 24 - 12)),
         hspace(8),
         # BPM shares the remaining time's 24px bottom-aligned line; the two
         # small rows below start where the elapsed time does (24px down)
@@ -225,6 +268,25 @@ def deck_header(d):
               '<MinimumSize>62,12</MinimumSize><MaximumSize>62,12</MaximumSize><NumberOfDigits>2</NumberOfDigits>'
               f'<Connection><ConfigKey>{g},file_bpm</ConfigKey></Connection></NumberBpm>'),
     ]), wpolicy='me')
+
+
+# Pitch fader ranges offered in Mixxx's preferences (fraction of [ChannelN],rateRange)
+RATE_RANGES = (1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 50, 90)
+
+
+def rate_range_label(d, h):
+    """'±8%'-style pitch range above the fader: one label per standard range,
+    each visible only while the deck's range equals it. Matched against
+    [Skin],pusher_rate_range_N (whole percent, published by pusher-script.js):
+    rateRange itself is a fraction whose visibility binding compares Mixxx's
+    normalised value, which never matches exactly."""
+    labels = ''.join(
+        f'<Label><ObjectName>DkRange</ObjectName><Text>&#177;{pct}%</Text><SizePolicy>f,f</SizePolicy>'
+        f'<MinimumSize>30,{h}</MinimumSize><MaximumSize>30,{h}</MaximumSize>'
+        f'<Connection><ConfigKey>[Skin],pusher_rate_range_{d["n"]}</ConfigKey>'
+        f'<Transform><IsEqual>{pct}</IsEqual></Transform><BindProperty>visible</BindProperty></Connection>'
+        '</Label>' for pct in RATE_RANGES)
+    return fixed_group('', 'horizontal', 30, h, labels)
 
 
 def deck_letter_column(d, h, below=''):
@@ -258,14 +320,8 @@ def waveform(d, mark_align):
               f'<SignalMidColor>{d["color"]}</SignalMidColor><SignalLowColor>{d["lo"]}</SignalLowColor>'
               f'<AxesColor></AxesColor><BeatColor>{FAINT}</BeatColor><PlayPosColor>{LINE}</PlayPosColor>'
               f'<BgColor>{INK}</BgColor><EndOfTrackColor>{RED}</EndOfTrackColor>'
-              + hotcue_mark(d, mark_align)
-              + cue_mark(mark_align)
-              + LOOP_RANGE
-              + f'<Mark><Control>loop_start_position</Control><Text>IN</Text><Align>{mark_align}</Align>'
-                f'<Color>{LIME}</Color><TextColor>{INK}</TextColor></Mark>'
-              + f'<Mark><Control>loop_end_position</Control><Text>OUT</Text><Align>{mark_align}</Align>'
-                f'<Color>{LIME}</Color><TextColor>{INK}</TextColor></Mark>'
-              '</Visual>')
+              + wave_marks(d, mark_align)
+              + '</Visual>')
     # Wrapped + height-capped: <MaximumSize> on Visual itself isn't respected.
     return fixed_group(f'Wave{s}Box', 'horizontal', 960, WAVE_H, visual)
 
@@ -296,11 +352,11 @@ def device_deck(d):
     # spare pixels Qt would centre the rows and the header would drop below
     # the 4px top it shares with the waveform page's header.
     overview = fixed_group('DkOverviewBox', 'horizontal', 100, 48, (
-        f'<Overview><Group>{g}</Group><SizePolicy>me,me</SizePolicy>'
+        f'<Overview><Group>{g}</Group><SizePolicy>me,me</SizePolicy>{overview_position(g)}'
         f'<BgColor>{INK}</BgColor>'
         f'<SignalColor>{d["color"]}</SignalColor><SignalHighColor>{d["hi"]}</SignalHighColor>'
         f'<SignalMidColor>{d["color"]}</SignalMidColor><SignalLowColor>{d["lo"]}</SignalLowColor>'
-        '<PlayedOverlayColor>#000000a0</PlayedOverlayColor>'
+        f'<PlayedOverlayColor>{PLAYED}</PlayedOverlayColor>'
         f'<PlayPosColor>{LINE}</PlayPosColor>'
         f'<EndOfTrackColor>{RED}</EndOfTrackColor>'
         + hotcue_mark(d)
@@ -309,12 +365,18 @@ def device_deck(d):
         + '</Overview>'), wpolicy='me')
 
     ctrl_parts = [
-        indicator('DkPlay', g, 'play_indicator', '&#9654;', 34),
-        hspace(2), indicator('DkCue', g, 'cue_indicator', 'CUE', 34),
-        hspace(2), indicator('DkKey', g, 'keylock', 'KEY', 34),
-        hspace(2), indicator('DkSync', g, 'sync_enabled', 'SYNC', 38, click='sync_enabled'),
-        hspace(2), indicator('DkLead', g, 'sync_leader', 'MASTER', 48, n=3),
-        hspace(8),
+        # row budget (main column 435px): 28+2+30+2+22+2+22+2+22+2+34+2+54+6 = 230,
+        # 7 loop pads >= 21px + 6 gaps = 153, 6 + ACTIVE 44 = 50  -> 433
+        indicator('DkPlay', g, 'play_indicator', '&#9654;', 28),
+        hspace(2), indicator('DkCue', g, 'cue_indicator', 'CUE', 30),
+        # slip, key lock, quantize as icon-only buttons (same order as their
+        # pads on the Push: SLIP | KEY | QNT; icons in CSS)
+        hspace(2), indicator('DkSlip', g, 'slip_enabled', '', 22),
+        hspace(2), indicator('DkKey', g, 'keylock', '', 22),
+        hspace(2), indicator('DkQuant', g, 'quantize', '', 22),
+        hspace(2), indicator('DkSync', g, 'sync_enabled', 'SYNC', 34, click='sync_enabled'),
+        hspace(2), indicator('DkLead', g, 'sync_leader', 'MASTER', 54, n=3),
+        hspace(6),
     ]
     for i, (label, val) in enumerate(LOOP_SIZES):
         if i:
@@ -322,9 +384,9 @@ def device_deck(d):
         if i == len(LOOP_SIZES) - 1:
             ctrl_parts.append(loop_size_tail(f'DkLoopSz{i}', g, label, val))
         else:
-            ctrl_parts.append(indicator(f'DkLoopSz{i}', g, 'beatloop_size', label, 22, n=64,
+            ctrl_parts.append(indicator(f'DkLoopSz{i}', g, 'beatloop_size', label, 21, n=64,
                                         expand=True, click=f'beatloop_{val}_activate'))
-    ctrl_parts += [hspace(8), indicator('DkLoopAct', g, 'loop_enabled', 'ACTIVE', 50)]
+    ctrl_parts += [hspace(6), indicator('DkLoopAct', g, 'loop_enabled', 'ACTIVE', 44)]
     ctrl = fixed_group('DkCtrlRow', 'horizontal', 100, ROW_H, ''.join(ctrl_parts), wpolicy='me')
 
     cues = []
@@ -333,16 +395,20 @@ def device_deck(d):
             cues.append(hspace(2))
         cue_states = ''.join(f'<State><Number>{k}</Number><Text>{i}{HOTCUE_PAD}</Text></State>' for k in range(3))
         cues.append(f'<HotcueButton><ObjectName>HotcueButton</ObjectName><Group>{g}</Group><Hotcue>{i}</Hotcue>'
-                    f'<SizePolicy>me,f</SizePolicy><MinimumSize>30,{ROW_H}</MinimumSize><MaximumSize>10000,{ROW_H}</MaximumSize>'
+                    f'<SizePolicy>me,f</SizePolicy><MinimumSize>30,{CUE_H}</MinimumSize><MaximumSize>10000,{CUE_H}</MaximumSize>'
                     f'<NumberStates>3</NumberStates>{cue_states}</HotcueButton>')
-    hotcues = fixed_group('DkHotcueRow', 'horizontal', 100, ROW_H, ''.join(cues), wpolicy='me')
+    hotcues = fixed_group('DkHotcueRow', 'horizontal', 100, CUE_H, ''.join(cues), wpolicy='me')
 
     main_col = ('<WidgetGroup><ObjectName>DkMain</ObjectName><Layout>vertical</Layout><SizePolicy>me,me</SizePolicy><Children>'
                 + vspace(HEADER_TOP) + header + vspace(4) + overview + vspace(4) + ctrl + vspace(4) + hotcues
                 + '</Children></WidgetGroup>')
 
+    # letter 2-34, pitch range 38-54, fader 56-160: the fader spans exactly
+    # from the overview's top to the hotcue pads' bottom in the main column
     side_col = deck_letter_column(d, 160, ''.join([
-        vspace(6),
+        vspace(4),
+        rate_range_label(d, 16),
+        vspace(2),
         fixed_group('', 'horizontal', 30, 104, ''.join([
             hspace(6),
             f'<SliderComposed><ObjectName>DkPitch</ObjectName><TooltipId>rate</TooltipId><Size>18f,104f</Size>'
@@ -351,7 +417,6 @@ def device_deck(d):
             f'<Connection><ConfigKey>{g},rate</ConfigKey></Connection></SliderComposed>',
             hspace(6),
         ])),
-        vspace(160 - 2 - 32 - 6 - 104),  # fill to 160 so the letter stays at the top
     ]))
 
     return (f'<!-- DECK {s} -->'
@@ -505,10 +570,10 @@ def lib_preview():
              f'<Size>{LIB_COVER}f,{LIB_COVER}f</Size><Children><CoverArt><Group>[PreviewDeck1]</Group>'
              '<SizePolicy>me,me</SizePolicy></CoverArt></Children></WidgetGroup>')
     overview = fixed_group('LibPreviewOverviewBox', 'horizontal', side_w, LIB_COVER - 24, (
-        '<Overview><Group>[PreviewDeck1]</Group><SizePolicy>me,me</SizePolicy>'
+        f'<Overview><Group>[PreviewDeck1]</Group><SizePolicy>me,me</SizePolicy>{overview_position("[PreviewDeck1]")}'
         f'<BgColor>{INK}</BgColor><SignalColor>{LIME}</SignalColor><SignalHighColor>#E4FA9C</SignalHighColor>'
         f'<SignalMidColor>{LIME}</SignalMidColor><SignalLowColor>#6E8A1E</SignalLowColor>'
-        f'<PlayedOverlayColor>#000000a0</PlayedOverlayColor><PlayPosColor>{LINE}</PlayPosColor>'
+        f'<PlayedOverlayColor>{PLAYED}</PlayedOverlayColor><PlayPosColor>{LINE}</PlayPosColor>'
         f'<EndOfTrackColor>{RED}</EndOfTrackColor></Overview>'))
     time = fixed_group('', 'horizontal', side_w, 24,
                        hspace(side_w - 74) + time_remaining({'g': '[PreviewDeck1]', 'n': 0}).replace('<Channel>0</Channel>', ''))
@@ -547,7 +612,7 @@ LIBRARY = f'''    <!-- ===== LIBRARY PAGE (shown while [Skin],pusher_scene is th
 
 # -------------------------------------------------------------------- CSS ----
 
-BASE_BTNS = ['DkPlay', 'DkCue', 'DkKey', 'DkSync', 'DkLead', 'DkLoopAct'] + [f'DkLoopSz{i}' for i in range(len(LOOP_SIZES))]
+BASE_BTNS = ['DkPlay', 'DkCue', 'DkSlip', 'DkKey', 'DkQuant', 'DkSync', 'DkLead', 'DkLoopAct'] + [f'DkLoopSz{i}' for i in range(len(LOOP_SIZES))]
 loop_sel = ',\n'.join([f'#DkLoopSz{i}[value="{v}"]' for i, (_, v) in enumerate(LOOP_SIZES)]
                       + [f'#DkLoopSz{len(LOOP_SIZES) - 1}[value="{v}"]' for v in LOOP_TAIL_SIZES])
 
@@ -568,14 +633,14 @@ WLabel, WTrackProperty, WNumberBpm, WNumberPos {{ color: {LINE}; }}
 #DkArtist {{ color: {DIM}; font-size: 11px; qproperty-alignment: 'AlignLeft|AlignTop'; }}
 #DkAlbum {{ color: {FAINT}; font-size: 11px; qproperty-alignment: 'AlignLeft|AlignTop'; }}
 
-#DkTimeRemain, #DkTimeElapsed {{ qproperty-wordWrap: true; padding: 0; }}
-#DkTimeRemain {{ color: {LINE}; font-family: {DISPLAY}; font-size: 18px; qproperty-alignment: 'AlignRight|AlignBottom'; }}
-#DkTimeElapsed {{ color: {DIM}; font-size: 11px; qproperty-alignment: 'AlignRight|AlignTop'; }}
+#DkTimeRemain {{ color: {LINE}; font-family: {DISPLAY}; font-size: 18px; qproperty-alignment: 'AlignRight|AlignBottom'; padding: 0; margin: 0; }}
+#DkTimeElapsed {{ color: {DIM}; font-size: 11px; qproperty-alignment: 'AlignRight|AlignTop'; padding: 0; margin: 0; }}
 
 #DkBpm {{ color: {LINE}; font-family: {DISPLAY}; font-size: 18px; qproperty-alignment: 'AlignRight|AlignBottom'; }}
 #DkRatePct, #DkRate, #DkFileBpm {{ color: {DIM}; font-size: 11px; qproperty-alignment: 'AlignRight|AlignTop'; }}
 
 #DkLetterA, #DkLetterB {{ font-family: {DISPLAY}; font-size: 30px; qproperty-alignment: 'AlignCenter'; }}
+#DkRange {{ color: {DIM}; font-size: 10px; qproperty-alignment: 'AlignCenter'; }}
 #DkLetterA {{ color: {DECKS[0]["color"]}; }}
 #DkLetterB {{ color: {DECKS[1]["color"]}; }}
 
@@ -591,7 +656,13 @@ WLabel, WTrackProperty, WNumberBpm, WNumberPos {{ color: {LINE}; }}
 #DkCue[displayValue="1"] {{ color: {INK}; background-color: {ORANGE}; border-color: {ORANGE}; }}
 #DkSync {{ color: #7d93ff; border-color: {BLUE}; }}
 #DkSync[displayValue="1"] {{ color: {LINE}; background-color: {BLUE}; border-color: {BLUE}; }}
-#DkKey[displayValue="1"], #DkLead[displayValue="2"] {{ color: {INK}; background-color: {LINE}; border-color: {LINE}; }}
+#DkSlip[displayValue="1"], #DkKey[displayValue="1"], #DkQuant[displayValue="1"], #DkLead[displayValue="2"] {{ color: {INK}; background-color: {LINE}; border-color: {LINE}; }}
+#DkSlip {{ image: url(skin:/image/icon-slip.svg); }}
+#DkSlip[displayValue="1"] {{ image: url(skin:/image/icon-slip-lit.svg); }}
+#DkKey {{ image: url(skin:/image/icon-keylock.svg); }}
+#DkKey[displayValue="1"] {{ image: url(skin:/image/icon-keylock-lit.svg); }}
+#DkQuant {{ image: url(skin:/image/icon-quantize.svg); }}
+#DkQuant[displayValue="1"] {{ image: url(skin:/image/icon-quantize-lit.svg); }}
 #DkLead[displayValue="1"] {{ color: {LINE}; border-color: {LINE}; }}
 {loop_sel} {{ color: {LINE}; border-color: {LINE}; }}
 
@@ -725,4 +796,22 @@ for d in DECKS:
 (SKIN_DIR / 'image' / 'preview-playing.svg').write_text(
     '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10">'
     '<path d="M2 1l7 4-7 4z" fill="#0d0d0d"/></svg>', encoding='utf-8')
+# key lock (eighth note) and quantize (magnet) icons: dim when off, ink on the lit fill
+NOTE = ('<path d="M8.5 1.5v7.2a2.2 2.2 0 1 1-1.3-2V3.2l3.3 1v1.5l-2-0.6z" fill="{c}"/>')
+MAGNET = ('<path d="M2.5 2v4.5a4 4 0 0 0 8 0V2" fill="none" stroke="{c}" stroke-width="2.2"/>'
+          '<rect x="1.4" y="1.2" width="2.2" height="2" fill="{c}"/><rect x="9.4" y="1.2" width="2.2" height="2" fill="{c}"/>')
+# slip: the track running ahead (arrow) over its ghost (dashed)
+SLIP = ('<path d="M1 4h9" stroke="{c}" stroke-width="1.6"/><path d="M9 1.5l3 2.5-3 2.5z" fill="{c}"/>'
+        '<path d="M1 9.5h10" stroke="{c}" stroke-width="1.6" stroke-dasharray="2 1.5"/>')
+for name, shape in (('slip', SLIP), ('keylock', NOTE), ('quantize', MAGNET)):
+    for suffix, colour in (('', DIM), ('-lit', INK)):
+        (SKIN_DIR / 'image' / f'icon-{name}{suffix}.svg').write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 13 13">'
+            + shape.format(c=colour) + '</svg>', encoding='utf-8')
+# loop bracket markers (ink on the lime tag): '[' at loop in, ']' at loop out
+for name, path in (('in', 'M11 2.5H6v11h5'), ('out', 'M5 2.5h5v11H5')):
+    (SKIN_DIR / 'image' / f'mark-loop-{name}.svg').write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
+        f'<path d="{path}" fill="none" stroke="{INK}" stroke-width="2.4" stroke-linecap="square"/></svg>',
+        encoding='utf-8')
 print('ok')

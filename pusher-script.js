@@ -274,9 +274,9 @@ PUSH2T.init = function (id, debugging) {
         PUSH2T.connectDeck('[Channel2]', 'B');
         PUSH2T.connectRecording();
         PUSH2T.drawStaticButtons();
-        // The skin (and its [Skin],pusher_scene control) loads after controller
-        // init, so resync the published scene once it exists.
-        engine.beginTimer(1000, PUSH2T.publishScene, true);
+        // The skin (and its [Skin],pusher_* controls) loads after controller
+        // init, so publish to it once it exists.
+        engine.beginTimer(1000, PUSH2T.skinSync, true);
         print('[PUSH2T] Push 2 Pusher mapping initialized.');
     } catch (e) {
         print('[PUSH2T] ERROR during init: ' + e);
@@ -503,9 +503,44 @@ PUSH2T.metronomeBtn = function (c, t, v) {
     print('[PUSH2T] pitch range ' + group + ' = +/-' + Math.round(next * 100) + '%');
 };
 
+// Double-tap the strip (two touches within STRIP_DOUBLETAP_MS, but not
+// within STRIP_DEBOUNCE_MS of each other) to reset the selected deck's pitch
+// to 0%, while in a non-Browse scene (pitch mode). The touch sensor sends
+// several rapid on/off/on 'bounce' messages for a single physical contact
+// (tens of ms apart) -- STRIP_DEBOUNCE_MS swallows those so they aren't
+// mistaken for a genuine second tap.
+PUSH2T.STRIP_DEBOUNCE_MS = 80;
+PUSH2T.STRIP_DOUBLETAP_MS = 600;
+PUSH2T._stripLastTouch = 0;
+
+// After a double-tap reset, ignore strip positions until the finger lifts,
+// otherwise the second tap's own position immediately re-sets the pitch.
+PUSH2T._stripHoldReset = false;
+
 PUSH2T.stripTouch = function (c, t, v, status) {
-    PUSH2T.stripTouching = ((status & 0xF0) === 0x90) && v > 0;
-    print('[PUSH2T] strip touch ' + (PUSH2T.stripTouching ? 'on' : 'off'));
+    var touchOn = ((status & 0xF0) === 0x90) && v > 0;
+    PUSH2T.stripTouching = touchOn;
+    if (!touchOn) { PUSH2T._stripHoldReset = false; }
+    if (touchOn) {
+        var now = Date.now();
+        var gap = now - PUSH2T._stripLastTouch;
+        print('[PUSH2T] strip touch on, gap ' + gap + ' ms');
+        if (gap < PUSH2T.STRIP_DEBOUNCE_MS) { return; }   // bounce from the same contact
+        if (gap < PUSH2T.STRIP_DOUBLETAP_MS) {
+            PUSH2T._stripLastTouch = 0;
+            PUSH2T._stripHoldReset = true;
+            if (!PUSH2T.inLibraryMode()) {
+                var group = PUSH2T.selectedGroup();
+                if (group !== null) {
+                    engine.setValue(group, 'rate', 0);
+                    PUSH2T.drawStrip();
+                    print('[PUSH2T] strip double-tap: reset pitch on ' + group);
+                }
+            }
+            return;
+        }
+        PUSH2T._stripLastTouch = now;
+    }
 };
 
 PUSH2T.stripPitch = function (c, t, v, status) {
@@ -514,7 +549,7 @@ PUSH2T.stripPitch = function (c, t, v, status) {
         t = v & 0x7F; v = v >> 7;
     }
     print('[PUSH2T] strip raw t=' + t + ' v=' + v + ' touching=' + PUSH2T.stripTouching);
-    if (PUSH2T.colorMode || !PUSH2T.stripTouching) { return; }
+    if (PUSH2T.colorMode || !PUSH2T.stripTouching || PUSH2T._stripHoldReset) { return; }
     // Browse scene: strip position = position in the preview song.
     if (PUSH2T.inLibraryMode()) {
         var w14 = (v > 127) ? v : ((v << 7) | (t & 0x7F));
@@ -1452,6 +1487,49 @@ PUSH2T.inLibraryMode = function () { return PUSH2T.scene === 'browse'; };
 // skin's manifest): the skin switches between its Device and Browse pages on
 // it, and bridge-script.js forwards it to push-screen.
 PUSH2T.SCENE_IDS = { 'none': 0, 'browse': 1, 'device': 2, 'mix': 3, 'clip': 4 };
+// Pitch fader range for the skin's '±8%' label. rateRange is a fraction and the
+// skin can only match exact values, so publish it as whole percent on
+// [Skin],pusher_rate_range_1/2 (also created by the Pusher160 manifest).
+PUSH2T.skinSync = function () {
+    PUSH2T.publishScene();
+    [1, 2].forEach(function (n) {
+        var g = '[Channel' + n + ']';
+        PUSH2T.safeConnect(g, 'rateRange', function (v) {
+            engine.setValue('[Skin]', 'pusher_rate_range_' + n, Math.round(v * 100));
+        });
+        // time_elapsed, not playposition: a seek on a paused deck doesn't notify
+        // scripts of playposition, but time_elapsed does
+        PUSH2T.safeConnect(g, 'time_elapsed', function () { PUSH2T.publishTime(n); });
+        PUSH2T.safeConnect(g, 'duration', function () { PUSH2T.publishTime(n); });
+    });
+};
+
+// Elapsed and remaining time for the skin, as digits on [Skin],pusher_t<n>_<key>
+// (minutes, tens of seconds, seconds). Computed here from ONE floored elapsed
+// value so both tick on the same frame and always add up to the track length:
+// Mixxx's own time widget floors elapsed and remaining separately, so its two
+// readouts change seconds at different moments. Only changed digits are sent.
+PUSH2T.TIME_KEYS = ['em', 'es10', 'es1', 'rm', 'rs10', 'rs1'];
+PUSH2T._timeCache = { 1: {}, 2: {} };
+PUSH2T.publishTime = function (n) {
+    var g = '[Channel' + n + ']';
+    var duration = engine.getValue(g, 'duration');
+    var total = Math.floor(duration);
+    var elapsed = Math.min(total, Math.max(0, Math.floor(engine.getValue(g, 'time_elapsed'))));
+    var remaining = total - elapsed;
+    var v = {
+        em: Math.floor(elapsed / 60), es10: Math.floor((elapsed % 60) / 10), es1: elapsed % 10,
+        rm: Math.floor(remaining / 60), rs10: Math.floor((remaining % 60) / 10), rs1: remaining % 10
+    };
+    var cache = PUSH2T._timeCache[n];
+    PUSH2T.TIME_KEYS.forEach(function (k) {
+        if (cache[k] !== v[k]) {
+            cache[k] = v[k];
+            engine.setValue('[Skin]', 'pusher_t' + n + '_' + k, v[k]);
+        }
+    });
+};
+
 PUSH2T.publishScene = function () {
     engine.setValue('[Skin]', 'pusher_scene', PUSH2T.SCENE_IDS[PUSH2T.scene] || 0);
 };
@@ -1605,14 +1683,13 @@ PUSH2T.connectRecording = function () {
 };
 
 // ──── ARROW BUTTONS (CC44 Left, CC45 Right, CC46 Up, CC47 Down) ────────────────
-// Up/Down move within whichever list has focus (tracks or sidebar folders/
-// playlists/crates). Left/Right switch focus sidebar <-> tracks;
-// SHIFT+Right opens the selected sidebar item. (Preview seeking is done only
-// with the touch strip, never the arrows.)
+// Only active in the Browse scene. Up/Down move within whichever list has
+// focus (tracks or sidebar folders/playlists/crates). Left/Right switch
+// focus sidebar <-> tracks; SHIFT+Right opens the selected sidebar item.
+// (Preview seeking is done only with the touch strip, never the arrows.)
 PUSH2T._arrow = function (key, v) {
-    print('[PUSH2T] arrow ' + key + ' v=' + v + ' colorMode=' + PUSH2T.colorMode +
-          ' scene=' + PUSH2T.scene + ' focused_widget(before)=' + engine.getValue('[Library]', 'focused_widget'));
-    if (v <= 0 || PUSH2T.colorMode) { return; }
+    if (v > 0) { print('[PUSH2T] arrow ' + key + ' scene=' + PUSH2T.scene); }
+    if (v <= 0 || PUSH2T.colorMode || !PUSH2T.inLibraryMode()) { return; }
     if (key === 'MoveUp' || key === 'MoveDown') {
         PUSH2T.previewDirty = true;
         // Normal (non-browse) view: if nothing in the library has keyboard
@@ -1658,6 +1735,8 @@ PUSH2T._decodeRelative = function (value) {
 PUSH2T.browseEncoder = function (c, t, v) {
     var amount = PUSH2T._decodeRelative(v);
     if (amount === 0) return;
+    print('[PUSH2T] browse encoder ' + amount + ' scene=' + PUSH2T.scene);
+    if (!PUSH2T.inLibraryMode()) return;      // library browsing only in the Browse scene
     PUSH2T.previewDirty = true;
 
     if (PUSH2T.shiftActive) {

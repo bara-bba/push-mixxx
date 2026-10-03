@@ -1614,6 +1614,40 @@ PUSH2T.skinSync = function () {
         PUSH2T.safeConnect(g, 'time_elapsed', function () { PUSH2T.publishTime(n); });
         PUSH2T.safeConnect(g, 'duration', function () { PUSH2T.publishTime(n); });
     });
+    engine.beginTimer(PUSH2T.SYNC_METER_MS, PUSH2T.publishSync);
+};
+
+// Beat sync meter in the skin's deck headers (Device and Mix pages): while both
+// decks play, how far each deck's beat is ahead (+) / behind (-) the other's,
+// from beat_distance (0-1 position between the previous and next beat). The
+// difference is wrapped to +-half a beat and published per deck on
+// [Skin],pusher_phase_N (0.5 + offset in beats, the meter), pusher_phase_ms_N
+// (offset in ms at that deck's BPM) and pusher_sync_ok_N (|offset| <=
+// SYNC_OK_MS -> lime). Polled, not connected: beat_distance changes every
+// audio buffer. Only changed values are sent.
+PUSH2T.SYNC_METER_MS = 100;
+PUSH2T.SYNC_OK_MS = 10;
+PUSH2T._syncCache = {};
+PUSH2T._syncSet = function (key, v) {
+    if (PUSH2T._syncCache[key] !== v) {
+        PUSH2T._syncCache[key] = v;
+        engine.setValue('[Skin]', key, v);
+    }
+};
+PUSH2T.publishSync = function () {
+    var a = '[Channel1]', b = '[Channel2]';
+    var show = engine.getValue(a, 'play') && engine.getValue(b, 'play')
+        && engine.getValue(a, 'bpm') > 0 && engine.getValue(b, 'bpm') > 0;
+    PUSH2T._syncSet('pusher_sync_show', show ? 1 : 0);
+    if (!show) { return; }
+    var d = engine.getValue(a, 'beat_distance') - engine.getValue(b, 'beat_distance');
+    d -= Math.round(d);                        // -> [-0.5, 0.5] beats, + = A ahead
+    [[1, d, a], [2, -d, b]].forEach(function (x) {
+        var ms = Math.round(x[1] * 60000 / engine.getValue(x[2], 'bpm'));
+        PUSH2T._syncSet('pusher_phase_' + x[0], Math.round((0.5 + x[1]) * 100) / 100);
+        PUSH2T._syncSet('pusher_phase_ms_' + x[0], ms);
+        PUSH2T._syncSet('pusher_sync_ok_' + x[0], Math.abs(ms) <= PUSH2T.SYNC_OK_MS ? 1 : 0);
+    });
 };
 
 // Elapsed and remaining time for the skin, as digits on [Skin],pusher_t<n>_<key>

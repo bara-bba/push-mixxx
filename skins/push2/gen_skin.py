@@ -131,6 +131,14 @@ def hidden_on(scenes, page):
 
 # ---------------------------------------------------------------- widgets ----
 
+def shown_when(key, value, children, layout='horizontal', negate=False):
+    """Group visible while key == value (or != value); hidden, it takes no space."""
+    return (f'<WidgetGroup><Layout>{layout}</Layout><SizePolicy>me,me</SizePolicy>'
+            f'<Connection><ConfigKey>{key}</ConfigKey><Transform><IsEqual>{value}</IsEqual>'
+            + ('<Not/>' if negate else '') + '</Transform><BindProperty>visible</BindProperty></Connection>'
+            f'<Children>{children}</Children></WidgetGroup>')
+
+
 def indicator(obj, g, key, text, w, n=2, expand=False, click=None):
     """Display-only button lit by a control; optional click connection."""
     policy = 'me,f' if expand else 'f,f'
@@ -242,6 +250,35 @@ LOOP_RANGE = ('<MarkRange><StartControl>loop_start_position</StartControl><EndCo
 
 # ------------------------------------------------------------- deck header ----
 
+def sync_row(d):
+    """Phase meter + offset in ms of this deck's beat against the other deck's,
+    from pusher-script.js (PUSH2T.publishSync): [Skin],pusher_phase_N is
+    0.5 + the offset in beats (0.5 = beats aligned, left = behind, right =
+    ahead), pusher_phase_ms_N the same in ms, pusher_sync_ok_N 1 while it's
+    within SYNC_OK_MS (lime) - else orange."""
+    n, s = d['n'], d['s'].lower()
+    meter = ('<SliderComposed><ObjectName>DkPhase</ObjectName><SizePolicy>me,f</SizePolicy>'
+             '<MinimumSize>40,12</MinimumSize><MaximumSize>10000,12</MaximumSize><Horizontal>true</Horizontal>'
+             '<Slider scalemode="STRETCH">image/phase-track.svg</Slider>'
+             f'<Handle scalemode="STRETCH_ASPECT">image/phase-handle-{s}.svg</Handle>'
+             f'<Connection><ConfigKey>[Skin],pusher_phase_{n}</ConfigKey><ConnectValueFromWidget>false</ConnectValueFromWidget>'
+             '</Connection></SliderComposed>')
+
+    def ms(obj):
+        return (f'<Number><ObjectName>{obj}</ObjectName><SizePolicy>f,f</SizePolicy>'
+                '<MinimumSize>34,12</MinimumSize><MaximumSize>34,12</MaximumSize><NumberOfDigits>0</NumberOfDigits>'
+                f'<Connection><ConfigKey>[Skin],pusher_phase_ms_{n}</ConfigKey></Connection></Number>')
+    readout = fixed_group('', 'horizontal', 34, 12,
+                          shown_when(f'[Skin],pusher_sync_ok_{n}', 1, ms('DkSyncOk'))
+                          + shown_when(f'[Skin],pusher_sync_ok_{n}', 1, ms('DkSyncOff'), negate=True))
+    return ('<WidgetGroup><Layout>horizontal</Layout><SizePolicy>me,f</SizePolicy>'
+            '<MinimumSize>10,12</MinimumSize><MaximumSize>10000,12</MaximumSize><Children>'
+            + meter + hspace(4) + readout
+            + '<Label><ObjectName>DkSyncUnit</ObjectName><Text>ms</Text><SizePolicy>f,f</SizePolicy>'
+              '<MinimumSize>16,12</MinimumSize><MaximumSize>16,12</MaximumSize></Label>'
+            + '</Children></WidgetGroup>')
+
+
 def deck_header(d):
     """The deck header used identically on the expanded (Device) and waveform
     (Mix) pages: cover, title/artist/album, remaining/elapsed, BPM/pitch/
@@ -254,7 +291,12 @@ def deck_header(d):
         # line of remaining time + BPM, artist and album on the two 12px lines
         # of elapsed / pitch % / file BPM
         fixed_group('DkTextCol', 'vertical', 10, 48, track_prop('DkTitle', g, 'title', 24)
-                    + track_prop('DkArtist', g, 'artist', 12) + track_prop('DkAlbum', g, 'album', 12), wpolicy='me'),
+                    + track_prop('DkArtist', g, 'artist', 12)
+                    # album line: the phase meter while both decks play (sync_row)
+                    + fixed_group('', 'horizontal', 10, 12,
+                                  shown_when('[Skin],pusher_sync_show', 1, track_prop('DkAlbum', g, 'album', 12), negate=True)
+                                  + shown_when('[Skin],pusher_sync_show', 1, sync_row(d)), wpolicy='me'),
+                    wpolicy='me'),
         hspace(6),
         fixed_group('DkTimeCol', 'vertical', 74, 48, time_readout(d, 'r', 'DkTimeRemain', 74, 24)
                     + time_readout(d, 'e', 'DkTimeElapsed', 74, 12) + vspace(48 - 24 - 12)),
@@ -534,14 +576,6 @@ def fx_unit(u):
                        vspace(4) + fixed_group('', 'horizontal', 4 * FX_COL_W, FX_COLS_H, cols) + footer)
 
 
-def shown_when(key, value, children, layout='horizontal', negate=False):
-    """Group visible while key == value (or != value); hidden, it takes no space."""
-    return (f'<WidgetGroup><Layout>{layout}</Layout><SizePolicy>me,me</SizePolicy>'
-            f'<Connection><ConfigKey>{key}</ConfigKey><Transform><IsEqual>{value}</IsEqual>'
-            + ('<Not/>' if negate else '') + '</Transform><BindProperty>visible</BindProperty></Connection>'
-            f'<Children>{children}</Children></WidgetGroup>')
-
-
 def reserved(w, h, key, children):
     """Fixed w x h slot whose content shows only while key is 1 (e.g. an
     effect parameter that exists): the slot stays, so nothing reflows."""
@@ -774,6 +808,10 @@ WLabel, WTrackProperty, WNumberBpm, WNumberPos {{ color: {LINE}; }}
 #DkTitle {{ color: {LINE}; font-family: {DISPLAY}; font-size: 15px; qproperty-alignment: 'AlignLeft|AlignBottom'; }}
 #DkArtist {{ color: {DIM}; font-size: 11px; qproperty-alignment: 'AlignLeft|AlignTop'; }}
 #DkAlbum {{ color: {FAINT}; font-size: 11px; qproperty-alignment: 'AlignLeft|AlignTop'; }}
+#DkSyncOk, #DkSyncOff {{ font-size: 11px; font-weight: bold; qproperty-alignment: 'AlignRight|AlignVCenter'; }}
+#DkSyncOk {{ color: {LIME}; }}
+#DkSyncOff {{ color: {ORANGE}; }}
+#DkSyncUnit {{ color: {DIM}; font-size: 10px; qproperty-alignment: 'AlignRight|AlignVCenter'; }}
 
 #DkTimeRemain {{ color: {LINE}; font-family: {DISPLAY}; font-size: 18px; qproperty-alignment: 'AlignRight|AlignBottom'; padding: 0; margin: 0; }}
 #DkTimeElapsed {{ color: {DIM}; font-size: 11px; qproperty-alignment: 'AlignRight|AlignTop'; padding: 0; margin: 0; }}

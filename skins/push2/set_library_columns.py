@@ -5,7 +5,8 @@ slim preview column under TITLE that marks the song playing in preview).
 
 Mixxx keeps each library view's column layout in mixxxdb.sqlite (settings
 table, '<view>.header_state_pb', a protobuf HeaderState), not in the skin, so
-this rewrites those rows. Run with Mixxx closed (it saves layouts on exit);
+this rewrites those rows. Run with Mixxx closed (it saves layouts on exit;
+on the Pi: sudo systemctl stop push2-screen mixxx);
 the database is backed up next to itself first. Views opened for the first
 time later (e.g. a playlist) start with Mixxx defaults: run this again.
 
@@ -20,7 +21,10 @@ import time
 
 import psutil
 
-DEFAULT_DB = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Mixxx', 'mixxxdb.sqlite')
+if os.name == 'nt':
+    DEFAULT_DB = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Mixxx', 'mixxxdb.sqlite')
+else:
+    DEFAULT_DB = os.path.expanduser('~/.mixxx/mixxxdb.sqlite')
 # (column name, width) - also read by gen_skin.py, which sizes the sort-label
 # row above the table from these so every label stays over its own column.
 # Short columns (BPM/Key/Length) get just enough for their values so the text
@@ -115,7 +119,7 @@ def rewrite(state_b64):
 
 def main():
     db_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DB
-    if any((p.info['name'] or '').lower() == 'mixxx.exe' for p in psutil.process_iter(['name'])):
+    if any((p.info['name'] or '').lower() in ('mixxx.exe', 'mixxx') for p in psutil.process_iter(['name'])):
         sys.exit('Close Mixxx first - it would overwrite the layout on exit.')
 
     backup = f'{db_path}.{time.strftime("%Y%m%d-%H%M%S")}.bak'

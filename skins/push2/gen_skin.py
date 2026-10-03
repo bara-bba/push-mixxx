@@ -703,18 +703,26 @@ def lib_preview():
         f'<SignalMidColor>{LIME}</SignalMidColor><SignalLowColor>#6E8A1E</SignalLowColor>'
         f'<PlayedOverlayColor>{PLAYED}</PlayedOverlayColor><PlayPosColor>{LINE}</PlayPosColor>'
         f'<EndOfTrackColor>{RED}</EndOfTrackColor></Overview>'))
-    # title + artist of the preview track in the free space left of the time
-    track_id = fixed_group('', 'vertical', side_w - 74 - 4, 24,
-                           track_prop('LibPreviewTitle', '[PreviewDeck1]', 'title', 13)
-                           + track_prop('LibPreviewArtist', '[PreviewDeck1]', 'artist', 11))
-    time = fixed_group('', 'horizontal', side_w, 24,
-                       track_id + hspace(4) + time_remaining({'g': '[PreviewDeck1]', 'n': 0}).replace('<Channel>0</Channel>', ''))
+    # title + artist of the preview track in the free space left of the time;
+    # it runs down past the cover/time to the preview's bottom edge, where the
+    # sidebar's focus bar (lib_focus_bar) starts
+    row_h = LIB_PREVIEW_H - 4
+    id_h = row_h - (LIB_COVER - 24)
+    track_id = fixed_group('', 'vertical', side_w - 74 - 4, id_h,
+                           track_prop('LibPreviewTitle', '[PreviewDeck1]', 'title', 15)
+                           + track_prop('LibPreviewArtist', '[PreviewDeck1]', 'artist', id_h - 15))
+    time = fixed_group('', 'horizontal', side_w, id_h,
+                       track_id + hspace(4)
+                       + fixed_group('', 'vertical', 74, id_h,
+                                     time_remaining({'g': '[PreviewDeck1]', 'n': 0}).replace('<Channel>0</Channel>', '')
+                                     + vspace(row_h - LIB_COVER)))
     return fixed_group('LibPreview', 'vertical', LIB_LEFT_W, LIB_PREVIEW_H,
-                       vspace(4) + fixed_group('', 'horizontal', LIB_LEFT_W, LIB_COVER,
-                                               hspace(4) + cover + hspace(6)
-                                               + fixed_group('', 'vertical', side_w, LIB_COVER, overview + time)
-                                               + hspace(6))
-                       + vspace(LIB_PREVIEW_H - 4 - LIB_COVER))
+                       vspace(4) + fixed_group('', 'horizontal', LIB_LEFT_W, row_h,
+                                               hspace(4)
+                                               + fixed_group('', 'vertical', LIB_COVER, row_h, cover + vspace(row_h - LIB_COVER))
+                                               + hspace(6)
+                                               + fixed_group('', 'vertical', side_w, row_h, overview + time)
+                                               + hspace(6)))
 
 
 LIBRARY = f'''    <!-- ===== LIBRARY PAGE (shown while [Skin],pusher_scene is the Browse

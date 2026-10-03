@@ -270,6 +270,10 @@ PUSH2T.init = function (id, debugging) {
         // (current position = start) regardless of what the GUI last left it at.
         engine.setValue('[Channel1]', 'loop_anchor', 0);
         engine.setValue('[Channel2]', 'loop_anchor', 0);
+        ['[Channel1]', '[Channel2]'].forEach(function(group) {
+            engine.setValue(group, 'quantize', 1);
+            engine.setValue(group, 'keylock', 1);
+        });
         PUSH2T.connectDeck('[Channel1]', 'A');
         PUSH2T.connectDeck('[Channel2]', 'B');
         PUSH2T.connectRecording();

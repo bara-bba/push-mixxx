@@ -28,6 +28,7 @@ import mido
 from PIL import Image, ImageDraw, ImageFont
 
 from mixxx_capture import MixxxSkinCapture, close_mixxx_popups, focus_mixxx
+from pi_stats import PiStats
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 
@@ -43,9 +44,11 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
-# The Push 2 display refreshes at 60Hz; on Windows the screen capture (~23ms)
-# is what actually limits the rate - see the [display] fps log.
-TARGET_FPS = 60
+# Capped well below the Push's 60Hz: on the Pi 3 capture + conversion costs
+# real CPU that Mixxx's audio and track analysis need. Mix shows moving
+# waveforms, so it gets more.
+TARGET_FPS = 20
+MIX_FPS = 30
 FPS_LOG_SECONDS = 5
 
 SYSEX_ID = 0x7D
@@ -59,6 +62,10 @@ CC_SETUP = 30  # unused by push-mixxx; hold to restart Mixxx
 SETUP_HOLD_SECONDS = 3
 # Needs a sudoers rule on the Pi: admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart mixxx.service
 RESTART_MIXXX_CMD = ['sudo', '-n', '/usr/bin/systemctl', 'restart', 'mixxx.service']
+CC_USER = 59  # unused by push-mixxx; toggles the Pi stats page
+# White-only Push buttons: same brightness levels push-mixxx uses for SHIFT/DELETE
+LED_DIM = 64
+LED_BRIGHT = 127
 
 COLOR_GRAY = (110, 110, 110)
 
@@ -81,7 +88,11 @@ class MixxxMidiBridge:
         self.midi_in = None
         self.midi_out = None
         self.push_in = None
+        self.push_out = None
         self._setup_timer = None
+        self.show_stats = False
+        self.fps = 0.0
+        self.pi_stats = PiStats(lambda: self.fps)
         self.skin_capture = MixxxSkinCapture()
         self._last_skin_frame = None
         self._frame_ready = threading.Condition()
@@ -166,6 +177,18 @@ class MixxxMidiBridge:
             print(f"[OK] Listening to Push buttons: {port}")
         except Exception as e:
             print(f"[!] Push buttons unavailable ({e}) - DELETE won't close popups")
+            return
+        out_port = next((p for p in mido.get_output_names() if PUSH_PORT_MATCH in p), None)
+        try:
+            self.push_out = mido.open_output(out_port) if out_port else None
+        except Exception as e:
+            print(f"[!] Push LEDs unavailable ({e})")
+        self._led(CC_SETUP, LED_DIM)
+        self._led(CC_USER, LED_DIM)
+
+    def _led(self, cc, value):
+        if self.push_out:
+            self.push_out.send(mido.Message('control_change', control=cc, value=value))
 
     def _on_push_message(self, msg):
         if msg.type != 'control_change':
@@ -178,10 +201,16 @@ class MixxxMidiBridge:
             if self._setup_timer:
                 self._setup_timer.cancel()
                 self._setup_timer = None
+            self._led(CC_SETUP, LED_BRIGHT if msg.value > 0 else LED_DIM)
             if msg.value > 0:
                 self._setup_timer = threading.Timer(SETUP_HOLD_SECONDS, self._restart_mixxx)
                 self._setup_timer.daemon = True
                 self._setup_timer.start()
+        elif msg.control == CC_USER and msg.value > 0:
+            self.show_stats = not self.show_stats
+            if self.show_stats:
+                self.pi_stats.start()
+            self._led(CC_USER, LED_BRIGHT if self.show_stats else LED_DIM)
 
     def _restart_mixxx(self):
         # systemd restarts this bridge too (push2-screen Requires=mixxx)
@@ -189,6 +218,28 @@ class MixxxMidiBridge:
         result = subprocess.run(RESTART_MIXXX_CMD, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"[setup] restart failed: {result.stderr.strip()}", flush=True)
+
+    def rawmidi_listener(self, path):
+        """Linux: reads the Mixxx Bridge SysEx straight from an ALSA raw MIDI
+        device. With snd-virmidi, what Mixxx writes to the 'VirMIDI 7-0'
+        sequencer port comes out of /dev/snd/midiC7D0, not out of the
+        sequencer port, so a normal mido input never sees it."""
+        print(f"Listening for Mixxx Bridge SysEx on {path}...")
+        buf = None
+        with open(path, 'rb', buffering=0) as dev:
+            while self.running:
+                for byte in dev.read(256):
+                    if byte == 0xF0:
+                        buf = []
+                    elif byte == 0xF7:
+                        if buf is not None:
+                            self.process_midi_message(mido.Message('sysex', data=buf))
+                        buf = None
+                    elif buf is not None:
+                        if byte < 0x80:
+                            buf.append(byte)
+                        else:
+                            buf = None
 
     def midi_listener(self):
         """Listen for MIDI messages from Mixxx"""
@@ -203,6 +254,8 @@ class MixxxMidiBridge:
 
     def render_display(self):
         """Render the Push 2 frame: the skin already shows the right page"""
+        if self.show_stats:
+            return self.pi_stats.render()
         frame = self.skin_capture.capture()
         if frame is not None:
             self._last_skin_frame = frame
@@ -219,8 +272,9 @@ class MixxxMidiBridge:
 
     def _frame_producer(self):
         """Capture + convert frames, keeping only the newest for the sender."""
-        frame_time = 1.0 / TARGET_FPS
         while self.running:
+            mix = self.state.scene == 'mix' and not self.show_stats
+            frame_time = 1.0 / (MIX_FPS if mix else TARGET_FPS)
             start = time.perf_counter()
             data = self.push2.prepare_frame(self.render_display())
             with self._frame_ready:
@@ -248,10 +302,11 @@ class MixxxMidiBridge:
             sent += 1
             now = time.perf_counter()
             if now - window_start >= FPS_LOG_SECONDS:
-                print(f"[display] {sent / (now - window_start):.1f} fps", flush=True)
+                self.fps = sent / (now - window_start)
+                print(f"[display] {self.fps:.1f} fps", flush=True)
                 sent, window_start = 0, now
 
-    def start(self):
+    def start(self, rawmidi_path=None):
         """Start the bridge"""
         print("Starting Mixxx MIDI Bridge...")
 
@@ -262,7 +317,9 @@ class MixxxMidiBridge:
         self.running = True
         self.connect_push_buttons()
 
-        if self.midi_in:
+        if rawmidi_path:
+            threading.Thread(target=self.rawmidi_listener, args=(rawmidi_path,), daemon=True).start()
+        elif self.midi_in:
             midi_thread = threading.Thread(target=self.midi_listener, daemon=True)
             midi_thread.start()
         else:
@@ -287,6 +344,8 @@ class MixxxMidiBridge:
             self.midi_out.close()
         if self.push_in:
             self.push_in.close()
+        if self.push_out:
+            self.push_out.close()
         self.skin_capture.close()
         self.push2.disconnect()
         print("Bridge stopped")
@@ -299,6 +358,8 @@ def main():
     parser.add_argument('--list-ports', action='store_true', help='List MIDI ports')
     parser.add_argument('--input', help='MIDI input port name (the "Mixxx Bridge" virtual port)')
     parser.add_argument('--output', help='MIDI output port name')
+    parser.add_argument('--rawmidi', help='Linux: read the bridge SysEx from this ALSA raw MIDI '
+                                          'device instead (Pi: /dev/snd/midiC7D0)')
 
     args = parser.parse_args()
 
@@ -308,8 +369,9 @@ def main():
         bridge.list_midi_ports()
         return
 
-    bridge.connect_midi(args.input, args.output)
-    bridge.start()
+    if not args.rawmidi:
+        bridge.connect_midi(args.input, args.output)
+    bridge.start(args.rawmidi)
 
 
 if __name__ == '__main__':

@@ -45,7 +45,9 @@ DISPLAY = '"TAN - SPRING", "Arial", sans-serif'
 
 LOOP_SIZES = [('1/4', '0.25'), ('1/2', '0.5'), ('1', '1'), ('2', '2'), ('4', '4'), ('8', '8'), ('16', '16')]
 ROW_H = 28   # Device page transport/loop row
-CUE_H = 20   # Device page hotcue row (4+48+4+48+4+28+4+20 = 160)
+CUE_H = 20   # Device page hotcue row (4+48+4+44+4+28+4+20+4 = 160)
+DK_OVERVIEW_H = 44  # Device page overview strip
+DK_BOTTOM = 4       # gap under the hotcue row / pitch fader (screen's bottom edge)
 # ~70px-wide pads: 6px digit + 17 x 3px nbsp centers the digit ~7px from the left edge
 HOTCUE_PAD = '&#160;' * 17
 # Each deck half is fixed at 479px (+ the 2px rule = 960): with expanding halves
@@ -348,10 +350,10 @@ def device_deck(d):
 
     header = deck_header(d)
 
-    # 48px so the column adds up to exactly 160 (4+48+4+48+4+24+4+24): with
-    # spare pixels Qt would centre the rows and the header would drop below
-    # the 4px top it shares with the waveform page's header.
-    overview = fixed_group('DkOverviewBox', 'horizontal', 100, 48, (
+    # sized so the column adds up to exactly 160 (see CUE_H): with spare
+    # pixels Qt would centre the rows and the header would drop below the
+    # 4px top it shares with the waveform page's header.
+    overview = fixed_group('DkOverviewBox', 'horizontal', 100, DK_OVERVIEW_H, (
         f'<Overview><Group>{g}</Group><SizePolicy>me,me</SizePolicy>{overview_position(g)}'
         f'<BgColor>{INK}</BgColor>'
         f'<SignalColor>{d["color"]}</SignalColor><SignalHighColor>{d["hi"]}</SignalHighColor>'
@@ -401,22 +403,24 @@ def device_deck(d):
 
     main_col = ('<WidgetGroup><ObjectName>DkMain</ObjectName><Layout>vertical</Layout><SizePolicy>me,me</SizePolicy><Children>'
                 + vspace(HEADER_TOP) + header + vspace(4) + overview + vspace(4) + ctrl + vspace(4) + hotcues
-                + '</Children></WidgetGroup>')
+                + vspace(DK_BOTTOM) + '</Children></WidgetGroup>')
 
-    # letter 2-34, pitch range 38-54, fader 56-160: the fader spans exactly
+    # letter 2-34, pitch range 38-54, fader 56-156: the fader spans exactly
     # from the overview's top to the hotcue pads' bottom in the main column
+    fader_h = 160 - 56 - DK_BOTTOM
     side_col = deck_letter_column(d, 160, ''.join([
         vspace(4),
         rate_range_label(d, 16),
         vspace(2),
-        fixed_group('', 'horizontal', 30, 104, ''.join([
+        fixed_group('', 'horizontal', 30, fader_h, ''.join([
             hspace(6),
-            f'<SliderComposed><ObjectName>DkPitch</ObjectName><TooltipId>rate</TooltipId><Size>18f,104f</Size>'
+            f'<SliderComposed><ObjectName>DkPitch</ObjectName><TooltipId>rate</TooltipId><Size>18f,{fader_h}f</Size>'
             f'<Slider scalemode="STRETCH">image/pitch-track-{s.lower()}.svg</Slider>'
             f'<Handle scalemode="STRETCH_ASPECT">image/pitch-handle-{s.lower()}.svg</Handle>'
             f'<Connection><ConfigKey>{g},rate</ConfigKey></Connection></SliderComposed>',
             hspace(6),
         ])),
+        vspace(DK_BOTTOM),
     ]))
 
     return (f'<!-- DECK {s} -->'
@@ -655,6 +659,19 @@ def lib_top_row():
     return fixed_group('LibTopRow', 'horizontal', LIB_RIGHT_W, LIB_TOP_H, cells)
 
 
+def lib_focus_bar(w, widget):
+    """The 2px gap above a library pane, lit lime while that pane has keyboard
+    focus ([Library],focused_widget: 2 = sidebar, 3 = track table) - i.e.
+    where the Push arrows / browse encoder are acting. Nothing is lit when
+    Mixxx's window itself isn't focused (then the arrows do nothing either)."""
+    return fixed_group('', 'horizontal', w, 2,
+                       '<WidgetGroup><ObjectName>LibFocus</ObjectName><SizePolicy>me,f</SizePolicy>'
+                       f'<MinimumSize>1,2</MinimumSize><MaximumSize>{w},2</MaximumSize>'
+                       '<Connection><ConfigKey>[Library],focused_widget</ConfigKey>'
+                       f'<Transform><IsEqual>{widget}</IsEqual></Transform><BindProperty>visible</BindProperty></Connection>'
+                       '</WidgetGroup>')
+
+
 def lib_analyze_bar():
     """'ANALYZING · TRACK n' at the bottom of the track list while
     pusher-script.js's batch analyze (Convert button) runs; the table gives it
@@ -712,12 +729,12 @@ LIBRARY = f'''    <!-- ===== LIBRARY PAGE (shown while [Skin],pusher_scene is th
       {scene_visibility(LIBRARY_SCENE, shown=True)}
       <Children>
 {fixed_group('LibLeft', 'vertical', LIB_LEFT_W, 160,
-             lib_preview() + vspace(2)
+             lib_preview() + lib_focus_bar(LIB_LEFT_W, 2)
              + fixed_group('LibSidebarBox', 'horizontal', LIB_LEFT_W, 160 - LIB_PREVIEW_H - 2,
                            '<LibrarySidebar></LibrarySidebar>'))}
 {vrule()}
 {fixed_group('LibRight', 'vertical', LIB_RIGHT_W, 160,
-             lib_top_row() + vspace(2)
+             lib_top_row() + lib_focus_bar(LIB_RIGHT_W, 3)
              + '<WidgetGroup><ObjectName>LibTableBox</ObjectName><Layout>horizontal</Layout><SizePolicy>me,me</SizePolicy>'
                '<Children><Library><ShowButtonText>false</ShowButtonText></Library></Children></WidgetGroup>'
              + lib_analyze_bar())}
@@ -833,6 +850,7 @@ QProgressBar::chunk {{ background-color: {LIME}; }}
 CSS += f'''
 /* Library page */
 #LibraryPage, #LibraryPage WWidgetGroup {{ background-color: {INK}; }}
+#LibraryPage WWidgetGroup#LibFocus {{ background-color: {LIME}; }}
 #LibSort0, #LibSort1, #LibSort2, #LibSort3, #LibSort4, #LibSort5 {{
   font-size: 11px; font-weight: bold; color: {DIM}; background-color: {INK}; border: 1px solid {EDGE}; border-radius: 0px;
 }}

@@ -26,7 +26,7 @@ import time
 import mido
 from PIL import Image, ImageDraw, ImageFont
 
-from mixxx_capture import MixxxSkinCapture, focus_mixxx
+from mixxx_capture import MixxxSkinCapture, close_mixxx_popups, focus_mixxx
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 
@@ -52,6 +52,9 @@ TYPE_SCENE = 0x03
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
+PUSH_PORT_MATCH = 'Push 2 Live Port'
+CC_DELETE = 118  # push-mixxx's DELETE modifier; also closes Mixxx popups here
+
 COLOR_GRAY = (110, 110, 110)
 
 
@@ -72,6 +75,7 @@ class MixxxMidiBridge:
         self.running = False
         self.midi_in = None
         self.midi_out = None
+        self.push_in = None
         self.skin_capture = MixxxSkinCapture()
         self._last_skin_frame = None
         self._frame_ready = threading.Condition()
@@ -144,6 +148,25 @@ class MixxxMidiBridge:
                 print(f"[focus] Browse: Mixxx {'in front' if ok else 'could NOT be focused'}")
             self.state.scene = scene
 
+    def connect_push_buttons(self):
+        """Listens to the Push alongside Mixxx so DELETE can close popups.
+        ALSA lets both read the port; on Windows Mixxx holds it exclusively,
+        so this just fails quietly there."""
+        port = next((p for p in mido.get_input_names() if PUSH_PORT_MATCH in p), None)
+        if not port:
+            return
+        try:
+            self.push_in = mido.open_input(port, callback=self._on_push_message)
+            print(f"[OK] Listening to Push buttons: {port}")
+        except Exception as e:
+            print(f"[!] Push buttons unavailable ({e}) - DELETE won't close popups")
+
+    def _on_push_message(self, msg):
+        if msg.type == 'control_change' and msg.control == CC_DELETE and msg.value > 0:
+            closed = close_mixxx_popups()
+            if closed:
+                print(f"[popup] DELETE closed {closed} window(s)")
+
     def midi_listener(self):
         """Listen for MIDI messages from Mixxx"""
         if not self.midi_in:
@@ -214,6 +237,7 @@ class MixxxMidiBridge:
             return False
 
         self.running = True
+        self.connect_push_buttons()
 
         if self.midi_in:
             midi_thread = threading.Thread(target=self.midi_listener, daemon=True)
@@ -238,6 +262,8 @@ class MixxxMidiBridge:
             self.midi_in.close()
         if self.midi_out:
             self.midi_out.close()
+        if self.push_in:
+            self.push_in.close()
         self.skin_capture.close()
         self.push2.disconnect()
         print("Bridge stopped")

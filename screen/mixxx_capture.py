@@ -32,6 +32,7 @@ a fixed region matching that display.
 """
 
 import ctypes
+import subprocess
 from ctypes import wintypes
 
 import mss
@@ -99,7 +100,7 @@ def focus_mixxx():
     background process, so attach to the foreground thread's input first.
     Returns True if Mixxx is in front afterwards."""
     if user32 is None:
-        return False
+        return _x11_focus_main()
     hwnd = _find_mixxx_hwnd()
     if not hwnd:
         return False
@@ -119,6 +120,54 @@ def focus_mixxx():
         if attached:
             user32.AttachThreadInput(me, fg_thread, False)
     return user32.GetForegroundWindow() == hwnd
+
+
+def _xdo(*args):
+    try:
+        return subprocess.run(['xdotool', *args], capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+
+
+def _x11_windows():
+    """(window id, title) of every visible X window (Pi: no window manager)."""
+    out = []
+    for wid in _xdo('search', '--onlyvisible', '--name', '').split():
+        name = _xdo('getwindowname', wid).strip()
+        if name:
+            out.append((wid, name))
+    return out
+
+
+def _is_main_title(name):
+    # "Mixxx", or "Artist - Title | Mixxx" once a track is loaded
+    return name == 'Mixxx' or name.endswith('| Mixxx')
+
+
+def _x11_focus_main():
+    for wid, name in _x11_windows():
+        if _is_main_title(name):
+            _xdo('windowfocus', '--sync', wid)
+            return True
+    return False
+
+
+def close_mixxx_popups():
+    """Linux only: sends Escape to every visible window except the main Mixxx
+    window (file pickers, message boxes - e.g. the iTunes picker Browse opens
+    when the sidebar lands on iTunes), then gives focus back to Mixxx so
+    library navigation keeps working. Returns how many were closed."""
+    if user32 is not None:
+        return 0
+    closed = 0
+    for wid, name in _x11_windows():
+        if _is_main_title(name):
+            continue
+        _xdo('windowfocus', '--sync', wid, 'key', '--window', wid, 'Escape')
+        closed += 1
+    if closed:
+        _x11_focus_main()
+    return closed
 
 
 # Pusher160 shows one 960x160 page at a time (Browse or Device, switched

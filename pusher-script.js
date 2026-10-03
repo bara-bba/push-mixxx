@@ -289,7 +289,7 @@ PUSH2T.shutdown = function () {
     if (engine.isScratching(2)) { engine.scratchDisable(2); }
     PUSH2T.clearAllPads();
     // Clear CC button LEDs (incl. SHIFT 0x31, DELETE 0x76, RECORD 0x56)
-    [0x14,0x15,0x16,0x18,0x19,0x1A,0x03,0x09,0x17,0x1B,0x2C,0x6E,0x6F,0x70,0x71,0x2D,0x2E,0x2F,0x30,0x31,0x55,0x56,0x58,0x69,0x6D,0x76].forEach(function(cc) {
+    [0x14,0x15,0x16,0x18,0x19,0x1A,0x03,0x09,0x17,0x1B,0x23,0x2C,0x6E,0x6F,0x70,0x71,0x2D,0x2E,0x2F,0x30,0x31,0x55,0x56,0x58,0x69,0x6D,0x76].forEach(function(cc) {
         midi.sendShortMsg(0xB0, cc, 0);
     });
     PUSH2T.stripConfig(PUSH2T.STRIP_CFG_HOST);
@@ -778,10 +778,54 @@ PUSH2T.FX_KNOB_DEFAULT = 0;      // value the reset button restores
 PUSH2T._fxUnitGroup = function (u) { return '[EffectRack1_EffectUnit' + u + ']'; };
 PUSH2T._fxEffGroup  = function (u, n) { return '[EffectRack1_EffectUnit' + u + '_Effect' + n + ']'; };
 
+// Expanded mode (PUSH2T.fxMode 1): the selected effect (fxSel) takes all 8
+// columns. Column c (1-8):
+//   encoders: parameter 1-3, META, parameter 4-6, unit SUPER
+//   buttons:  ON, button_parameter 1-7 (no RESET in this view)
+// HOLDING a top-row button (FX_HOLD_MS) switches the view: in the 3-effect
+// view, holding an effect's ON button expands that effect (holding RESET
+// expands the arrow-selected one); in the expanded view, holding any button
+// goes back. So every top-row button acts on RELEASE (a short press): ON /
+// button-parameter toggles, and (3-effect view) RESET = reset the 3
+// metaknobs + super.
+// Published as [Skin],pusher_fx_mode.
+// (Mirrors FX_EXP_KNOBS / FX_EXP_BUTTONS in skins/push2/gen_skin.py.)
+PUSH2T.FX_EXP_KNOBS   = [1, 2, 3, 'meta', 4, 5, 6, 'super'];
+PUSH2T.FX_EXP_BUTTONS = ['on', 1, 2, 3, 4, 5, 6, 7];
+PUSH2T.FX_HOLD_MS = 500;
+PUSH2T.fxMode = 0;
+PUSH2T._fxHold = null;          // { cc, timer } while a top-row button is down
+PUSH2T._fxSelGroup = function () {
+    var u = PUSH2T.fxSel <= 3 ? 1 : 2;
+    return { u: u, g: PUSH2T._fxEffGroup(u, PUSH2T.fxSel - (u - 1) * 3) };
+};
+PUSH2T.fxSetMode = function (mode) {
+    PUSH2T.fxMode = mode;
+    engine.setValue('[Skin]', 'pusher_fx_mode', mode);
+    PUSH2T.drawTopRow();
+};
+PUSH2T.fxReset = function (u) {
+    for (var n = 1; n <= 3; n++) {
+        engine.setValue(PUSH2T._fxEffGroup(u, n), 'meta', PUSH2T.FX_KNOB_DEFAULT);
+    }
+    engine.setValue(PUSH2T._fxUnitGroup(u), 'super1', PUSH2T.FX_KNOB_DEFAULT);
+};
+
 PUSH2T.fxEncoder = function (cc, v) {
     var u = (cc < 75) ? 1 : 2, idx = cc - (71 + (u - 1) * 4);
     var d = PUSH2T._decodeRelative(v) * PUSH2T.FX_KNOB_STEP;
     if (d === 0) { return; }
+    if (PUSH2T.fxMode) {
+        var s = PUSH2T._fxSelGroup(), knob = PUSH2T.FX_EXP_KNOBS[cc - 71], eg, ek;
+        if (knob === 'meta')       { eg = s.g; ek = 'meta'; }
+        else if (knob === 'super') { eg = PUSH2T._fxUnitGroup(s.u); ek = 'super1'; }
+        else {
+            eg = s.g; ek = 'parameter' + knob;
+            if (!engine.getValue(eg, ek + '_loaded')) { return; }
+        }
+        engine.setParameter(eg, ek, Math.max(0, Math.min(1, engine.getParameter(eg, ek) + d)));
+        return;
+    }
     // idx 3 (4th knob) = the unit's Super Knob (super1): moves all 3 effects'
     // own metaknobs together, NOT the dry/wet mix (which sounds like a plain
     // volume control on the effect and isn't what 'master' means here).
@@ -790,21 +834,77 @@ PUSH2T.fxEncoder = function (cc, v) {
     engine.setValue(g, key, Math.max(0, Math.min(1, engine.getValue(g, key) + d)));
 };
 
+// Top-row button in the Clip scene: press arms the hold timer; releasing
+// before it fires is a short press (fxPress), otherwise the hold already
+// switched the view (fxLongPress) and the release does nothing.
 PUSH2T.fxButton = function (cc, v) {
-    if (v <= 0) { return; }
-    var u = (cc < 106) ? 1 : 2, idx = cc - (102 + (u - 1) * 4);
-    if (idx < 3) {
-        var g = PUSH2T._fxEffGroup(u, idx + 1);
-        engine.setValue(g, 'enabled', engine.getValue(g, 'enabled') ? 0 : 1);
-    } else {
-        for (var n = 1; n <= 3; n++) {
-            engine.setValue(PUSH2T._fxEffGroup(u, n), 'meta', PUSH2T.FX_KNOB_DEFAULT);
-        }
-        engine.setValue(PUSH2T._fxUnitGroup(u), 'super1', PUSH2T.FX_KNOB_DEFAULT);
+    if (v > 0) {
+        if (PUSH2T._fxHold) { engine.stopTimer(PUSH2T._fxHold.timer); }
+        PUSH2T._fxHold = { cc: cc, timer: engine.beginTimer(PUSH2T.FX_HOLD_MS, function () {
+            PUSH2T._fxHold = null;
+            PUSH2T.fxLongPress(cc);
+        }, true) };
+        return;
     }
+    if (!PUSH2T._fxHold || PUSH2T._fxHold.cc !== cc) { return; }
+    engine.stopTimer(PUSH2T._fxHold.timer);
+    PUSH2T._fxHold = null;
+    PUSH2T.fxPress(cc);
+};
+
+PUSH2T.fxLongPress = function (cc) {
+    if (PUSH2T.fxMode) { PUSH2T.fxSetMode(0); return; }          // back to 3 effects
+    var u = (cc < 106) ? 1 : 2, idx = cc - (102 + (u - 1) * 4);
+    if (idx < 3) { PUSH2T.fxSelect((u - 1) * 3 + idx + 1); }      // that effect
+    PUSH2T.fxSetMode(1);
+};
+
+PUSH2T.fxPress = function (cc) {
+    var u = (cc < 106) ? 1 : 2, idx = cc - (102 + (u - 1) * 4);
+    if (!PUSH2T.fxMode && idx === 3) { PUSH2T.fxReset(u); return; }
+    var g;
+    if (PUSH2T.fxMode) {
+        var b = PUSH2T.FX_EXP_BUTTONS[cc - 102];
+        g = PUSH2T._fxSelGroup().g;
+        if (b === 'on') { engine.setValue(g, 'enabled', engine.getValue(g, 'enabled') ? 0 : 1); return; }
+        var key = 'button_parameter' + b;
+        if (engine.getValue(g, key + '_loaded')) { engine.setValue(g, key, engine.getValue(g, key) ? 0 : 1); }
+        return;
+    }
+    g = PUSH2T._fxEffGroup(u, idx + 1);
+    engine.setValue(g, 'enabled', engine.getValue(g, 'enabled') ? 0 : 1);
+};
+
+// Clip scene arrows: Left/Right pick one of the 6 effect slots (unit 1 slots
+// 1-3, then unit 2 slots 1-3 - left to right on the skin's FX page), Up/Down
+// step that slot through the available effects (prev/next_effect). The
+// selection is published to the skin as [Skin],pusher_fx_sel (1-6) so it can
+// draw a marker over the selected column.
+PUSH2T.fxSel = 1;
+PUSH2T.fxSelect = function (n) {
+    PUSH2T.fxSel = Math.max(1, Math.min(6, n));
+    engine.setValue('[Skin]', 'pusher_fx_sel', PUSH2T.fxSel);
+    if (PUSH2T.fxMode && PUSH2T.scene === 'clip') { PUSH2T.drawTopRow(); }   // expanded: new effect's buttons
+};
+PUSH2T.fxArrow = function (key) {
+    if (key === 'MoveLeft')  { PUSH2T.fxSelect(PUSH2T.fxSel - 1); return; }
+    if (key === 'MoveRight') { PUSH2T.fxSelect(PUSH2T.fxSel + 1); return; }
+    var u = PUSH2T.fxSel <= 3 ? 1 : 2, n = PUSH2T.fxSel - (u - 1) * 3;
+    engine.setValue(PUSH2T._fxEffGroup(u, n), key === 'MoveUp' ? 'prev_effect' : 'next_effect', 1);
 };
 
 PUSH2T.drawMixButtons = function () {  // renders the Clip scene's FX layout
+    if (PUSH2T.fxMode) {
+        var g = PUSH2T._fxSelGroup().g;
+        PUSH2T.FX_EXP_BUTTONS.forEach(function (b, i) {
+            var color;
+            if (b === 'on') { color = engine.getValue(g, 'enabled') ? PUSH2T.C.green : PUSH2T.C.paleWhite; }
+            else if (!engine.getValue(g, 'button_parameter' + b + '_loaded')) { color = 0; }
+            else { color = engine.getValue(g, 'button_parameter' + b) ? PUSH2T.C.green : PUSH2T.C.paleWhite; }
+            PUSH2T.setCC(102 + i, color);
+        });
+        return;
+    }
     [1, 2].forEach(function (u) {
         for (var idx = 0; idx < 4; idx++) {
             var cc = 102 + (u - 1) * 4 + idx, color;
@@ -818,6 +918,7 @@ PUSH2T.drawMixButtons = function () {  // renders the Clip scene's FX layout
 };
 
 PUSH2T.drawTopRow = function () {
+    if (!PUSH2T._analyze) { PUSH2T.setCC(0x23, PUSH2T.inLibraryMode() ? 64 : 0); }
     if (PUSH2T.scene === 'clip') {
         PUSH2T.drawMixButtons();
     } else if (PUSH2T.inLibraryMode()) {
@@ -866,6 +967,13 @@ PUSH2T.drawStaticButtons = function () {
         for (var n = 1; n <= 3; n++) {
             PUSH2T.safeConnect(PUSH2T._fxEffGroup(u, n), 'enabled', function () {
                 if (PUSH2T.scene === 'clip') { PUSH2T.drawTopRow(); }
+            });
+            // expanded view: button-parameter LEDs follow the value / the loaded effect
+            ['loaded_effect', 'button_parameter1', 'button_parameter2', 'button_parameter3',
+             'button_parameter4', 'button_parameter5', 'button_parameter6', 'button_parameter7'].forEach(function (key) {
+                PUSH2T.safeConnect(PUSH2T._fxEffGroup(u, n), key, function () {
+                    if (PUSH2T.scene === 'clip' && PUSH2T.fxMode) { PUSH2T.drawTopRow(); }
+                });
             });
         }
     });
@@ -1683,12 +1791,14 @@ PUSH2T.connectRecording = function () {
 };
 
 // ──── ARROW BUTTONS (CC44 Left, CC45 Right, CC46 Up, CC47 Down) ────────────────
-// Only active in the Browse scene. Up/Down move within whichever list has
+// Browse scene: Up/Down move within whichever list has
 // focus (tracks or sidebar folders/playlists/crates). Left/Right switch
 // focus sidebar <-> tracks; SHIFT+Right opens the selected sidebar item.
 // (Preview seeking is done only with the touch strip, never the arrows.)
+// Clip scene: Left/Right select an effect slot, Up/Down change its effect (fxArrow).
 PUSH2T._arrow = function (key, v) {
     if (v > 0) { print('[PUSH2T] arrow ' + key + ' scene=' + PUSH2T.scene); }
+    if (v > 0 && PUSH2T.scene === 'clip' && !PUSH2T.colorMode) { PUSH2T.fxArrow(key); return; }
     if (v <= 0 || PUSH2T.colorMode || !PUSH2T.inLibraryMode()) { return; }
     if (key === 'MoveUp' || key === 'MoveDown') {
         PUSH2T.previewDirty = true;
@@ -1877,10 +1987,66 @@ PUSH2T.fxEnc77 = function (c, t, v) { if (PUSH2T.scene === 'clip') { PUSH2T.fxEn
     };
 });
 
+// ─── CONVERT (CC35): batch-analyze the shown track list (Browse scene only) ──
+// Mixxx has no controller control for "Analyze", but it analyzes a track
+// (BPM, key, waveform) when it's loaded into a player. So Convert walks the
+// track list currently shown (open a playlist/crate first with the arrows +
+// SHIFT+Right) from the top, loading each track into the preview deck, one
+// every ANALYZE_STEP_MS. It stops at the end of the list (the same track loads
+// twice in a row) or when Convert is pressed again. While it runs, Convert
+// flips bright/dim once per track as a heartbeat.
+PUSH2T.ANALYZE_STEP_MS = 1500;
+PUSH2T._analyze = null;          // { timer, last, count } while running
+
+PUSH2T._analyzeStop = function (why) {
+    if (!PUSH2T._analyze) { return; }
+    engine.stopTimer(PUSH2T._analyze.timer);
+    print('[PUSH2T] batch analyze stopped (' + why + ') after ' + PUSH2T._analyze.count + ' tracks');
+    PUSH2T._analyze = null;
+    engine.setValue('[Skin]', 'pusher_analyze', 0);
+    engine.setValue('[PreviewDeck1]', 'play', 0);
+    PUSH2T.setCC(0x23, PUSH2T.inLibraryMode() ? 64 : 0);
+};
+
+PUSH2T._analyzeStep = function () {
+    var a = PUSH2T._analyze;
+    if (!a) { return; }
+    if (!PUSH2T.inLibraryMode()) { PUSH2T._analyzeStop('left Browse'); return; }
+    var pv = '[PreviewDeck1]';
+    // identify what's loaded now: same length as last time = list didn't move
+    var id = engine.getValue(pv, 'track_samples') + '/' + engine.getValue(pv, 'duration');
+    if (a.count > 0 && id === a.last) { PUSH2T._analyzeStop('end of list'); return; }
+    a.last = id;
+    a.count++;
+    // heartbeat: Convert flips bright/dim once per track so you can see it advance
+    PUSH2T.setCC(0x23, (a.count % 2) ? 20 : 127);
+    engine.setValue('[Library]', 'MoveDown', 1);
+    engine.setValue(pv, 'LoadSelectedTrack', 1);
+    engine.setValue('[Skin]', 'pusher_analyze', a.count + 1);   // status bar in the skin
+};
+
+PUSH2T.convertBtn = function (c, t, v) {
+    if (v <= 0 || PUSH2T.colorMode || !PUSH2T.inLibraryMode()) { return; }
+    if (PUSH2T._analyze) { PUSH2T._analyzeStop('cancelled'); return; }
+    var pv = '[PreviewDeck1]';
+    engine.setValue(pv, 'play', 0);
+    // focus the track list and jump to its first row, then load it
+    engine.setValue('[Library]', 'focused_widget', 3);
+    engine.setValue('[Library]', 'MoveVertical', -100000);
+    engine.setValue(pv, 'LoadSelectedTrack', 1);
+    PUSH2T._analyze = { timer: 0, last: '', count: 0 };
+    PUSH2T._analyze.timer = engine.beginTimer(PUSH2T.ANALYZE_STEP_MS, PUSH2T._analyzeStep);
+    // the Pusher160 skin shows "ANALYZING · TRACK n" while this is non-zero
+    engine.setValue('[Skin]', 'pusher_analyze', 1);
+    PUSH2T.previewDirty = true;
+    PUSH2T.setCC(0x23, 127);
+    print('[PUSH2T] batch analyze started');
+};
+
 // Wrap every button/pad handler so color-edit mode can intercept it. Done at
 // script load (not init) so the wrapped versions are what the XML resolves.
 (function () {
-    var names = ['sceneBrowse', 'sceneDevice', 'sceneMix', 'sceneClip', 'metronomeBtn', 'tapTempo', 'deckSelA', 'deckSelB', 'top102', 'top103', 'top104', 'top106', 'top107', 'top108', 'vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
+    var names = ['convertBtn', 'sceneBrowse', 'sceneDevice', 'sceneMix', 'sceneClip', 'metronomeBtn', 'tapTempo', 'deckSelA', 'deckSelB', 'top102', 'top103', 'top104', 'top106', 'top107', 'top108', 'vuPad', 'deleteBtn', 'toggleBrowser', 'recordToggle', 'loadA', 'loadB',
                  'loadPrevA', 'loadNextA', 'loadPrevB', 'loadNextB',
                  'gainResetA', 'gainResetB'];
     ['A', 'B'].forEach(function (s) {

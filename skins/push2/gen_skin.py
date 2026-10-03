@@ -483,10 +483,28 @@ def fx_knob(key, arc_color):
     return fixed_group('', 'horizontal', FX_COL_W, 70, hspace(side) + knob + hspace(side))
 
 
-def fx_column(top, name, knob):
+def fx_column(top, name, knob, slot=None):
+    # slot 1-6 = the effect slot the Push arrows can select; its column gets a
+    # lime bar, as wide as the button, a few px above it while
+    # [Skin],pusher_fx_sel equals it (the strip is always reserved so the
+    # column never reflows)
+    bar_w = FX_COL_W - 12
+    marker = (vspace(FX_SEL_H) if slot is None else
+              fixed_group('', 'horizontal', FX_COL_W, FX_SEL_H,
+                          hspace(6)
+                          + '<WidgetGroup><ObjectName>FxSel</ObjectName><SizePolicy>f,f</SizePolicy>'
+                          f'<MinimumSize>{bar_w},{FX_SEL_H}</MinimumSize><MaximumSize>{bar_w},{FX_SEL_H}</MaximumSize>'
+                          '<Connection><ConfigKey>[Skin],pusher_fx_sel</ConfigKey>'
+                          f'<Transform><IsEqual>{slot}</IsEqual></Transform><BindProperty>visible</BindProperty></Connection>'
+                          '</WidgetGroup>' + hspace(6)))
     return fixed_group('FxCol', 'vertical', FX_COL_W, FX_COLS_H,
-                       vspace(4) + fixed_group('', 'horizontal', FX_COL_W, 22, hspace(6) + top + hspace(6))
-                       + vspace(6) + name + vspace(2) + knob + vspace(6))
+                       marker + vspace(FX_SEL_GAP)
+                       + fixed_group('', 'horizontal', FX_COL_W, 22, hspace(6) + top + hspace(6))
+                       + vspace(4) + name + vspace(2) + knob + vspace(6))
+
+
+FX_SEL_H = 3      # selection bar height
+FX_SEL_GAP = 3    # gap between the bar and the ON button
 
 
 def fx_unit(u):
@@ -499,7 +517,7 @@ def fx_unit(u):
             (f'<EffectName><ObjectName>FxName</ObjectName><EffectRack>1</EffectRack><EffectUnit>{u}</EffectUnit>'
              f'<Effect>{n}</Effect><SizePolicy>f,f</SizePolicy>'
              f'<MinimumSize>{FX_COL_W},18</MinimumSize><MaximumSize>{FX_COL_W},18</MaximumSize></EffectName>'),
-            fx_knob(f'{eff},meta', LIME))
+            fx_knob(f'{eff},meta', LIME), slot=(u - 1) * 3 + n)
     cols += fx_column(label('FxReset', 'RESET', FX_COL_W - 12, 22),
                       label('FxSuperName', 'SUPER', FX_COL_W, 18),
                       fx_knob(f'{unit},super1', LINE))
@@ -512,9 +530,78 @@ def fx_unit(u):
                        vspace(4) + fixed_group('', 'horizontal', 4 * FX_COL_W, FX_COLS_H, cols) + footer)
 
 
+def shown_when(key, value, children, layout='horizontal', negate=False):
+    """Group visible while key == value (or != value); hidden, it takes no space."""
+    return (f'<WidgetGroup><Layout>{layout}</Layout><SizePolicy>me,me</SizePolicy>'
+            f'<Connection><ConfigKey>{key}</ConfigKey><Transform><IsEqual>{value}</IsEqual>'
+            + ('<Not/>' if negate else '') + '</Transform><BindProperty>visible</BindProperty></Connection>'
+            f'<Children>{children}</Children></WidgetGroup>')
+
+
+def reserved(w, h, key, children):
+    """Fixed w x h slot whose content shows only while key is 1 (e.g. an
+    effect parameter that exists): the slot stays, so nothing reflows."""
+    return fixed_group('', 'horizontal', w, h, shown_when(key, 1, children))
+
+
+# Expanded FX view: one effect over all 8 columns. Push encoder/button c (1-8):
+#   knobs   param1 param2 param3 META  param4 param5 param6 SUPER(unit)
+#   buttons ON     bp1    bp2    bp3   bp4    bp5    bp6    bp7
+# (bp = the effect's button parameters, e.g. Echo's quantize/triplets.)
+# Mirrors PUSH2T.FX_EXP_* in pusher-script.js.
+FX_EXP_KNOBS = [1, 2, 3, 'meta', 4, 5, 6, 'super']
+FX_EXP_BUTTONS = ['on', 1, 2, 3, 4, 5, 6, 7]
+
+
+def fx_param_name(tag, u, n, k, obj, w, h):
+    sub = 'EffectParameter' if tag == 'EffectParameterName' else 'EffectButtonParameter'
+    return (f'<{tag}><ObjectName>{obj}</ObjectName><EffectRack>1</EffectRack><EffectUnit>{u}</EffectUnit>'
+            f'<Effect>{n}</Effect><{sub}>{k}</{sub}><SizePolicy>f,f</SizePolicy>'
+            f'<MinimumSize>{w},{h}</MinimumSize><MaximumSize>{w},{h}</MaximumSize></{tag}>')
+
+
+def fx_expanded(slot):
+    u, n = (slot - 1) // 3 + 1, (slot - 1) % 3 + 1
+    unit, eff = f'[EffectRack1_EffectUnit{u}]', f'[EffectRack1_EffectUnit{u}_Effect{n}]'
+    bw = FX_COL_W - 12
+    cols = ''
+    for knob, button in zip(FX_EXP_KNOBS, FX_EXP_BUTTONS):
+        if button == 'on':
+            top = display_button('FxOn', f'{eff},enabled', 'ON', bw, 22)
+        else:   # button parameter: lit (lime) / unlit name, blank if the effect has none
+            bp = f'{eff},button_parameter{button}'
+            top = reserved(bw, 22, f'{bp}_loaded',
+                           shown_when(bp, 1, fx_param_name('EffectButtonParameterName', u, n, button, 'FxBpOn', bw, 22))
+                           + shown_when(bp, 1, fx_param_name('EffectButtonParameterName', u, n, button, 'FxBpOff', bw, 22),
+                                        negate=True))
+        if knob == 'meta':
+            name, dial = fixed_group('', 'horizontal', FX_COL_W, 18, label('FxSuperName', 'META', FX_COL_W, 18)), fx_knob(f'{eff},meta', LIME)
+        elif knob == 'super':
+            name, dial = fixed_group('', 'horizontal', FX_COL_W, 18, label('FxSuperName', 'SUPER', FX_COL_W, 18)), fx_knob(f'{unit},super1', LINE)
+        else:
+            p = f'{eff},parameter{knob}'
+            name = reserved(FX_COL_W, 18, f'{p}_loaded',
+                            fx_param_name('EffectParameterName', u, n, knob, 'FxParamName', FX_COL_W, 18))
+            dial = reserved(FX_COL_W, 70, f'{p}_loaded', fx_knob(p, LIME))
+        cols += fx_column(top, name, dial)
+    badges = ''.join(display_button(f'FxDeck{d["s"]}', f'{unit},group_{d["g"]}_enable', d['s'], 28, 20) + hspace(4)
+                     for d in DECKS)
+    footer = fixed_group('FxFooter', 'horizontal', 8 * FX_COL_W, FX_FOOTER_H,
+                         hspace(8) + label('FxUnitLabel', f'FX {u}', 44, FX_FOOTER_H) + hspace(6) + badges
+                         + hspace(10)
+                         + ('<EffectName><ObjectName>FxExpName</ObjectName><EffectRack>1</EffectRack>'
+                            f'<EffectUnit>{u}</EffectUnit><Effect>{n}</Effect><SizePolicy>f,f</SizePolicy>'
+                            f'<MinimumSize>400,{FX_FOOTER_H}</MinimumSize><MaximumSize>400,{FX_FOOTER_H}</MaximumSize></EffectName>')
+                         + '<WidgetGroup><SizePolicy>me,min</SizePolicy></WidgetGroup>'
+                         + label('FxHint', f'SLOT {n} &#183; HOLD ANY BUTTON FOR 3-FX VIEW', 260, FX_FOOTER_H) + hspace(8))
+    return fixed_group('FxUnit', 'vertical', 8 * FX_COL_W, 160,
+                       vspace(4) + fixed_group('', 'horizontal', 8 * FX_COL_W, FX_COLS_H, cols) + footer)
+
+
 FX = f'''    <!-- ===== FX PAGE (shown while [Skin],pusher_scene is the Clip scene):
          2 FX units, one 120px column per Push encoder/button above the
-         screen. GENERATED by gen_skin.py. ===== -->
+         screen; [Skin],pusher_fx_mode 1 = one effect expanded over all 8
+         columns (the [Skin],pusher_fx_sel slot). GENERATED by gen_skin.py. ===== -->
     <WidgetGroup>
       <ObjectName>FxPage</ObjectName>
       <Layout>horizontal</Layout>
@@ -522,8 +609,8 @@ FX = f'''    <!-- ===== FX PAGE (shown while [Skin],pusher_scene is the Clip sce
       <MaximumSize>960,160</MaximumSize>
       {scene_visibility(FX_SCENE, shown=True)}
       <Children>
-{fx_unit(1)}
-{fx_unit(2)}
+{shown_when('[Skin],pusher_fx_mode', 0, fx_unit(1) + fx_unit(2))}
+{shown_when('[Skin],pusher_fx_mode', 1, ''.join(shown_when('[Skin],pusher_fx_sel', k, fx_expanded(k)) for k in range(1, 7)))}
       </Children>
     </WidgetGroup>
 
@@ -548,8 +635,12 @@ FX = f'''    <!-- ===== FX PAGE (shown while [Skin],pusher_scene is the Clip sce
 LIB_TOP_H = 20
 LIB_RIGHT_W = sum(w for _, w in LIB_COLUMNS) + LIB_SCROLLBAR_W
 LIB_LEFT_W = 960 - LIB_RIGHT_W - 2  # preview + folders/playlists
-LIB_PREVIEW_H = 76
-LIB_COVER = 68
+# 160 - 2px gap - 5 sidebar rows of 18px = 68: the folders/playlists tree shows
+# exactly 5 whole rows, never a half-cut one
+LIB_SIDEBAR_ROWS = 5
+LIB_SIDEBAR_ROW_H = 18
+LIB_PREVIEW_H = 160 - 2 - LIB_SIDEBAR_ROWS * LIB_SIDEBAR_ROW_H
+LIB_COVER = LIB_PREVIEW_H - 8
 SORT_LABELS = [('TITLE', 2), ('ARTIST', 1), ('ALBUM', 3), ('BPM', 15), ('KEY', 20), ('LENGTH', 13)]
 
 
@@ -564,6 +655,26 @@ def lib_top_row():
     return fixed_group('LibTopRow', 'horizontal', LIB_RIGHT_W, LIB_TOP_H, cells)
 
 
+def lib_analyze_bar():
+    """'ANALYZING · TRACK n' at the bottom of the track list while
+    pusher-script.js's batch analyze (Convert button) runs; the table gives it
+    its bottom row. [Skin],pusher_analyze = track number, 0 = idle."""
+    count = ('<Number><ObjectName>LibAnalyzeCount</ObjectName><SizePolicy>max,f</SizePolicy>'
+             f'<MinimumSize>1,{LIB_ANALYZE_H}</MinimumSize><MaximumSize>60,{LIB_ANALYZE_H}</MaximumSize>'
+             '<NumberOfDigits>0</NumberOfDigits>'
+             '<Connection><ConfigKey>[Skin],pusher_analyze</ConfigKey></Connection></Number>')
+    return ('<WidgetGroup><ObjectName>LibAnalyzeBar</ObjectName><Layout>horizontal</Layout><SizePolicy>me,f</SizePolicy>'
+            f'<MinimumSize>100,{LIB_ANALYZE_H}</MinimumSize><MaximumSize>10000,{LIB_ANALYZE_H}</MaximumSize>'
+            '<Connection><ConfigKey>[Skin],pusher_analyze</ConfigKey>'
+            '<Transform><IsEqual>0</IsEqual><Not/></Transform><BindProperty>visible</BindProperty></Connection>'
+            '<Children>' + hspace(8) + label('LibAnalyzeText', 'ANALYZING', 64, LIB_ANALYZE_H)
+            + label('LibAnalyzeSep', '&#183; TRACK', 50, LIB_ANALYZE_H) + count
+            + '<WidgetGroup><SizePolicy>me,min</SizePolicy></WidgetGroup></Children></WidgetGroup>')
+
+
+LIB_ANALYZE_H = 20
+
+
 def lib_preview():
     side_w = LIB_LEFT_W - LIB_COVER - 4 - 6 - 6
     cover = ('<WidgetGroup><ObjectName>LibPreviewCover</ObjectName><Layout>horizontal</Layout>'
@@ -575,13 +686,18 @@ def lib_preview():
         f'<SignalMidColor>{LIME}</SignalMidColor><SignalLowColor>#6E8A1E</SignalLowColor>'
         f'<PlayedOverlayColor>{PLAYED}</PlayedOverlayColor><PlayPosColor>{LINE}</PlayPosColor>'
         f'<EndOfTrackColor>{RED}</EndOfTrackColor></Overview>'))
+    # title + artist of the preview track in the free space left of the time
+    track_id = fixed_group('', 'vertical', side_w - 74 - 4, 24,
+                           track_prop('LibPreviewTitle', '[PreviewDeck1]', 'title', 13)
+                           + track_prop('LibPreviewArtist', '[PreviewDeck1]', 'artist', 11))
     time = fixed_group('', 'horizontal', side_w, 24,
-                       hspace(side_w - 74) + time_remaining({'g': '[PreviewDeck1]', 'n': 0}).replace('<Channel>0</Channel>', ''))
+                       track_id + hspace(4) + time_remaining({'g': '[PreviewDeck1]', 'n': 0}).replace('<Channel>0</Channel>', ''))
     return fixed_group('LibPreview', 'vertical', LIB_LEFT_W, LIB_PREVIEW_H,
                        vspace(4) + fixed_group('', 'horizontal', LIB_LEFT_W, LIB_COVER,
                                                hspace(4) + cover + hspace(6)
                                                + fixed_group('', 'vertical', side_w, LIB_COVER, overview + time)
-                                               + hspace(6)))
+                                               + hspace(6))
+                       + vspace(LIB_PREVIEW_H - 4 - LIB_COVER))
 
 
 LIBRARY = f'''    <!-- ===== LIBRARY PAGE (shown while [Skin],pusher_scene is the Browse
@@ -602,8 +718,9 @@ LIBRARY = f'''    <!-- ===== LIBRARY PAGE (shown while [Skin],pusher_scene is th
 {vrule()}
 {fixed_group('LibRight', 'vertical', LIB_RIGHT_W, 160,
              lib_top_row() + vspace(2)
-             + fixed_group('LibTableBox', 'horizontal', LIB_RIGHT_W, 160 - LIB_TOP_H - 2,
-                           '<Library><ShowButtonText>false</ShowButtonText></Library>'))}
+             + '<WidgetGroup><ObjectName>LibTableBox</ObjectName><Layout>horizontal</Layout><SizePolicy>me,me</SizePolicy>'
+               '<Children><Library><ShowButtonText>false</ShowButtonText></Library></Children></WidgetGroup>'
+             + lib_analyze_bar())}
       </Children>
     </WidgetGroup>
 
@@ -701,6 +818,19 @@ def hotcue_tint(d):
 CSS += ''.join(hotcue_tint(d) for d in DECKS)
 
 CSS += f'''
+/* Mixxx's own popups (library scanner etc.) land on the Push screen too */
+QDialog, QMessageBox, QProgressDialog, LibraryScannerDlg {{ background-color: {INK}; color: {LINE}; border: 1px solid {EDGE}; }}
+QDialog QLabel, QMessageBox QLabel, LibraryScannerDlg QLabel {{ color: {LINE}; font-size: 11px; background-color: transparent; }}
+QDialog QPushButton, QMessageBox QPushButton, LibraryScannerDlg QPushButton {{
+  font-size: 11px; font-weight: bold; color: {DIM}; background-color: {INK};
+  border: 1px solid {EDGE}; border-radius: 0px; padding: 2px 10px;
+}}
+QDialog QPushButton:pressed, QMessageBox QPushButton:pressed, LibraryScannerDlg QPushButton:pressed {{ color: {INK}; background-color: {LIME}; border-color: {LIME}; }}
+QProgressBar {{ background-color: {INK}; border: 1px solid {EDGE}; color: {LINE}; text-align: center; }}
+QProgressBar::chunk {{ background-color: {LIME}; }}
+'''
+
+CSS += f'''
 /* Library page */
 #LibraryPage, #LibraryPage WWidgetGroup {{ background-color: {INK}; }}
 #LibSort0, #LibSort1, #LibSort2, #LibSort3, #LibSort4, #LibSort5 {{
@@ -725,11 +855,22 @@ QScrollBar::handle:vertical {{ background: {EDGE}; min-height: 12px; border: non
 QScrollBar:horizontal {{ height: 0px; border: none; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ height: 0px; width: 0px; border: none; background: none; }}
 
+/* Analyze view: no Select All / Analyze / New-All bar (display only, the Push
+   can't press them) - collapsed to zero height so the track list keeps the room */
+DlgAnalysis #LibraryFeatureControls, #DlgAnalysis #LibraryFeatureControls {{
+  min-height: 0px; max-height: 0px; margin: 0px; padding: 0px; border: none;
+}}
 /* The sort labels above are the header (columns aligned under them) */
 WTrackTableViewHeader {{ max-height: 0px; min-height: 0px; border: none; }}
 
 #LibPreview, #LibPreview WWidgetGroup {{ background-color: {INK}; }}
 #LibPreviewCover {{ border: 1px solid {EDGE}; }}
+#LibAnalyzeBar, #LibAnalyzeBar WWidgetGroup {{ background-color: {INK}; }}
+#LibAnalyzeBar {{ border-top: 1px solid {LIME}; }}
+#LibAnalyzeText {{ color: {LIME}; font-size: 11px; font-weight: bold; qproperty-alignment: 'AlignLeft|AlignVCenter'; }}
+#LibAnalyzeSep, #LibAnalyzeCount {{ color: {LINE}; font-size: 11px; font-weight: bold; qproperty-alignment: 'AlignLeft|AlignVCenter'; }}
+#LibPreviewTitle {{ color: {LINE}; font-size: 11px; font-weight: bold; qproperty-alignment: 'AlignLeft|AlignBottom'; }}
+#LibPreviewArtist {{ color: {DIM}; font-size: 10px; qproperty-alignment: 'AlignLeft|AlignTop'; }}
 #LibPreviewOverviewBox {{ background-color: {INK}; border: 1px solid {EDGE}; }}
 /* Preview column: empty except on the song playing in preview (lime) */
 #LibraryPreviewButton {{ background: transparent; margin: 0px; padding: 0px; border: none; }}
@@ -739,11 +880,18 @@ WTrackTableViewHeader {{ max-height: 0px; min-height: 0px; border: none; }}
 /* FX page */
 #FxUnit, #FxUnit WWidgetGroup {{ background-color: {INK}; }}
 #FxCol {{ border-right: 1px solid {HAIR}; }}
+#FxUnit WWidgetGroup#FxSel {{ background-color: {LIME}; }}
 #FxFooter {{ border-top: 1px solid {HAIR}; }}
 #FxOn {{ font-size: 11px; font-weight: bold; color: {DIM}; background-color: {INK}; border: 1px solid {EDGE}; border-radius: 0px; }}
 #FxOn[displayValue="1"] {{ color: {INK}; background-color: {LIME}; border-color: {LIME}; }}
 #FxReset {{ font-size: 11px; font-weight: bold; color: {LINE}; background-color: {INK}; border: 1px solid {EDGE}; qproperty-alignment: 'AlignCenter'; }}
 #FxName, #FxSuperName {{ color: {LINE}; font-family: {DISPLAY}; font-size: 14px; qproperty-alignment: 'AlignCenter'; }}
+#FxParamName {{ color: {LINE}; font-size: 12px; font-weight: bold; qproperty-alignment: 'AlignCenter'; }}
+#FxBpOn, #FxBpOff {{ font-size: 11px; font-weight: bold; border: 1px solid {EDGE}; qproperty-alignment: 'AlignCenter'; }}
+#FxBpOn {{ color: {INK}; background-color: {LIME}; border-color: {LIME}; }}
+#FxBpOff {{ color: {DIM}; background-color: {INK}; }}
+#FxExpName {{ color: {LIME}; font-family: {DISPLAY}; font-size: 16px; qproperty-alignment: 'AlignLeft|AlignVCenter'; }}
+#FxHint {{ color: {FAINT}; font-size: 10px; qproperty-alignment: 'AlignRight|AlignVCenter'; }}
 #FxUnitLabel {{ color: {LINE}; font-family: {DISPLAY}; font-size: 16px; qproperty-alignment: 'AlignLeft|AlignVCenter'; }}
 #FxDeckA, #FxDeckB {{ font-size: 12px; font-weight: bold; color: {FAINT}; background-color: {INK}; border: 1px solid {EDGE}; border-radius: 0px; }}
 #FxDeckA[displayValue="1"] {{ color: {INK}; background-color: {DECKS[0]["color"]}; border-color: {DECKS[0]["color"]}; }}

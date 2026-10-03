@@ -26,7 +26,7 @@ import time
 import mido
 from PIL import Image, ImageDraw, ImageFont
 
-from mixxx_capture import MixxxSkinCapture
+from mixxx_capture import MixxxSkinCapture, focus_mixxx
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 
@@ -137,7 +137,12 @@ class MixxxMidiBridge:
         frame_type = data[1]
 
         if frame_type == TYPE_SCENE and len(data) >= 3:
-            self.state.scene = SCENE_NAMES.get(data[2], 'none')
+            scene = SCENE_NAMES.get(data[2], 'none')
+            # Browse navigation only works while Mixxx has focus (see focus_mixxx)
+            if scene == 'browse' and self.state.scene != 'browse':
+                ok = focus_mixxx()
+                print(f"[focus] Browse: Mixxx {'in front' if ok else 'could NOT be focused'}")
+            self.state.scene = scene
 
     def midi_listener(self):
         """Listen for MIDI messages from Mixxx"""

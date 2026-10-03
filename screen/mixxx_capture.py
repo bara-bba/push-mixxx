@@ -44,6 +44,9 @@ MENU_BAR_HEIGHT = 21  # File/Library/View/Options/Help row, inside the client re
 # last-known-good position, in case a plain grab is still better than nothing.
 FALLBACK_REGION = {"left": 108, "top": 152, "width": 960, "height": 160}
 
+# Pi: Mixxx runs fullscreen on a 960x160 Xvfb display, so the skin is the whole screen.
+HEADLESS_REGION = {"left": 0, "top": 0, "width": 960, "height": 160}
+
 TARGET_SIZE = (960, 160)
 
 user32 = ctypes.windll.user32 if hasattr(ctypes, 'windll') else None
@@ -85,6 +88,37 @@ def _find_mixxx_hwnd():
     WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user32.EnumWindows(WNDENUMPROC(callback), 0)
     return result[0] if result else None
+
+
+def focus_mixxx():
+    """Brings the Mixxx window to the foreground (Windows only). Mixxx ignores
+    the [Library] navigation controls the Push arrows / browse encoder use
+    ("No Mixxx window, popup or menu has focus. Don't send key events")
+    unless one of its windows has focus, which on a desktop with other apps
+    open it usually doesn't. Windows refuses SetForegroundWindow from a
+    background process, so attach to the foreground thread's input first.
+    Returns True if Mixxx is in front afterwards."""
+    if user32 is None:
+        return False
+    hwnd = _find_mixxx_hwnd()
+    if not hwnd:
+        return False
+    fg = user32.GetForegroundWindow()
+    if fg == hwnd:
+        return True
+    kernel32 = ctypes.windll.kernel32
+    me = kernel32.GetCurrentThreadId()
+    fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(fg_thread and fg_thread != me and user32.AttachThreadInput(me, fg_thread, True))
+    try:
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(me, fg_thread, False)
+    return user32.GetForegroundWindow() == hwnd
 
 
 # Pusher160 shows one 960x160 page at a time (Browse or Device, switched
@@ -129,7 +163,12 @@ class MixxxSkinCapture:
         960x160. Returns None on any capture failure (window not found/
         closed/minimized) rather than raising - callers should keep showing
         the last good frame."""
-        region = self._fixed_region or _live_content_region() or FALLBACK_REGION
+        if self._fixed_region:
+            region = self._fixed_region
+        elif user32 is None:
+            region = HEADLESS_REGION
+        else:
+            region = _live_content_region() or FALLBACK_REGION
 
         try:
             sct = self._ensure_sct()

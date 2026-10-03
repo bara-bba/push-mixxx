@@ -322,6 +322,11 @@
                 <status>0xB0</status><midino>0x4D</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.convertBtn</key>
+                <description>CONVERT – batch-analyze the shown track list (Browse scene only) – CC35 (0x23)</description>
+                <status>0xB0</status><midino>0x23</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.deleteBtn</key>
                 <description>DELETE (hold) – CC118 (0x76)</description>
                 <status>0xB0</status><midino>0x76</midino>

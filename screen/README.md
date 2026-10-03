@@ -105,6 +105,13 @@ Use `python utils/find-window.py` to find the right coordinates.
   `[display] NN.N fps`. Measured on the Windows dev PC: ~56 FPS, limited by
   the screen capture (~23 ms/frame).
 
+- Focus (Windows): Mixxx ignores the library navigation the Push arrows and
+  browse encoder use unless its window has focus ("No Mixxx window, popup or
+  menu has focus" in mixxx.log). So whenever the Push enters the Browse
+  scene, the bridge brings Mixxx to the foreground (`focus_mixxx()` in
+  `mixxx_capture.py`, logged as `[focus] ...`). Clicking another app
+  afterwards takes focus away again until Browse is re-entered.
+
 ## Open items
 
 - **Next step: verify the frame rate on the Raspberry Pi 3.** Run the bridge

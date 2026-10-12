@@ -75,8 +75,10 @@ def _level_color(value, warn, alarm):
 
 
 class PiStats:
-    def __init__(self, fps_source=None):
+    def __init__(self, fps_source=None, audio_source=None):
         self._fps_source = fps_source or (lambda: 0.0)
+        # () -> (dropouts total, dropouts last minute, engine load %) or None
+        self._audio_source = audio_source or (lambda: None)
         self._data = {}
         self._lock = threading.Lock()
         self._thread = None
@@ -224,11 +226,21 @@ class PiStats:
         for label, key in (('MIXXX', 'mixxx'), ('SCREEN', 'python')):
             val = d.get(key)
             text = f"{val[0]:.0f}% cpu  {val[1] >> 20} MB" if val else 'not running'
+            if val and key == 'python':
+                text += f"  {self._fps_source():.0f} fps"
             draw.text((x, y), label, font=self.f_label, fill=DIM)
             draw.text((x + 62, y - 2), text, font=self.f_body, fill=LINE if val else RED)
             y += 18
-        draw.text((x, y), 'FPS', font=self.f_label, fill=DIM)
-        draw.text((x + 62, y - 2), f"{self._fps_source():.1f}", font=self.f_body, fill=LINE)
+        # Mixxx's own underrun detector: red while a dropout happened in the last minute
+        audio = self._audio_source()
+        draw.text((x, y), 'AUDIO', font=self.f_label, fill=DIM)
+        if audio is None:
+            draw.text((x + 62, y - 2), 'no data', font=self.f_body, fill=DIM)
+        else:
+            total, recent, pct = audio
+            col = RED if recent else LIME
+            draw.text((x + 62, y - 2), f"{total} dropouts" + (f" (+{recent}/min)" if recent else '')
+                      + f"  {pct}% load", font=self.f_body, fill=col)
         up = int(d['uptime'])
         draw.text((x, 92), f"UP  {up // 86400}d {up % 86400 // 3600}h {up % 3600 // 60}m", font=self.f_body, fill=LINE)
         draw.text((x, 110), f"{self.hostname}  {d['ip']}", font=self.f_body, fill=DIM)

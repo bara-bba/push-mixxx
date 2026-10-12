@@ -20,15 +20,17 @@ SysEx frame: F0 7D <type> <deck> <payload...> F7
 """
 
 import importlib
+import os
 import subprocess
 import threading
 import time
 
 import mido
+import psutil
 from PIL import Image, ImageDraw, ImageFont
 
 from mixxx_capture import MixxxSkinCapture, close_mixxx_popups, focus_mixxx
-from pi_stats import PiStats
+from pi_stats import BODY_BOLD_FONTS, DISPLAY_FONTS, EDGE, INK, LIME, LINE, DIM, PiStats, _font
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
 
@@ -53,6 +55,7 @@ FPS_LOG_SECONDS = 5
 
 SYSEX_ID = 0x7D
 TYPE_SCENE = 0x03
+TYPE_AUDIO = 0x05  # dropoutsHi dropoutsLo enginePct (bridge-script.js)
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
@@ -62,6 +65,9 @@ CC_SETUP = 30  # unused by push-mixxx; hold to restart Mixxx
 SETUP_HOLD_SECONDS = 3
 # Needs a sudoers rule on the Pi: admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart mixxx.service
 RESTART_MIXXX_CMD = ['sudo', '-n', '/usr/bin/systemctl', 'restart', 'mixxx.service']
+CC_SHIFT = 49  # push-mixxx's SHIFT; SHIFT + hold SETUP ejects the music drive
+# Needs a sudoers rule on the Pi: admin ALL=(root) NOPASSWD: /usr/local/bin/usb-library-eject
+EJECT_CMD = ['sudo', '-n', '/usr/local/bin/usb-library-eject']
 CC_USER = 59  # unused by push-mixxx; toggles the Pi stats page
 # White-only Push buttons: same brightness levels push-mixxx uses for SHIFT/DELETE
 LED_DIM = 64
@@ -76,12 +82,21 @@ class MixxxState:
 
     def __init__(self):
         self.scene = 'none'
+        self.dropouts = None      # audio underruns since Mixxx started
+        self.engine_pct = None    # Mixxx audio engine load, % of the buffer time
+        self.dropout_times = []   # monotonic times of dropouts seen by this bridge
 
 
 class MixxxMidiBridge:
     """Bridge between the Pusher160 skin capture / push-mixxx SysEx and the Push 2 display."""
 
-    def __init__(self):
+    def __init__(self, music_drive=None):
+        self.music_drive = music_drive  # Pi: mount point of the USB music drive
+        self._shift = False
+        self._setup_action = 'restart'
+        self._ejecting = False
+        self._ejected = False
+        self._mixxx_up = (0.0, True)  # (checked at, running)
         self.push2 = Push2Display()
         self.state = MixxxState()
         self.running = False
@@ -90,9 +105,13 @@ class MixxxMidiBridge:
         self.push_in = None
         self.push_out = None
         self._setup_timer = None
+        self._setup_pressed_at = None
+        self._restarting = False
+        self._f_countdown = _font(DISPLAY_FONTS, 30)
+        self._f_note = _font(BODY_BOLD_FONTS, 11)
         self.show_stats = False
         self.fps = 0.0
-        self.pi_stats = PiStats(lambda: self.fps)
+        self.pi_stats = PiStats(lambda: self.fps, self._audio_stats)
         self.skin_capture = MixxxSkinCapture()
         self._last_skin_frame = None
         self._frame_ready = threading.Condition()
@@ -164,6 +183,23 @@ class MixxxMidiBridge:
                 ok = focus_mixxx()
                 print(f"[focus] Browse: Mixxx {'in front' if ok else 'could NOT be focused'}")
             self.state.scene = scene
+        elif frame_type == TYPE_AUDIO and len(data) >= 5:
+            count, pct = (data[2] << 7) | data[3], data[4]
+            st = self.state
+            if st.dropouts is not None and count > st.dropouts:
+                now = time.monotonic()
+                st.dropout_times += [now] * (count - st.dropouts)
+                print(f"[audio] DROPOUT #{count} (engine load {pct}%)", flush=True)
+            st.dropouts, st.engine_pct = count, pct
+
+    def _audio_stats(self):
+        """(dropouts total, dropouts in the last minute, engine load %) or None."""
+        st = self.state
+        if st.dropouts is None:
+            return None
+        cutoff = time.monotonic() - 60
+        st.dropout_times = [t for t in st.dropout_times if t > cutoff]
+        return st.dropouts, len(st.dropout_times), st.engine_pct
 
     def connect_push_buttons(self):
         """Listens to the Push alongside Mixxx so DELETE can close popups.
@@ -197,13 +233,19 @@ class MixxxMidiBridge:
             closed = close_mixxx_popups()
             if closed:
                 print(f"[popup] DELETE closed {closed} window(s)")
+        elif msg.control == CC_SHIFT:
+            self._shift = msg.value > 0
         elif msg.control == CC_SETUP:
             if self._setup_timer:
                 self._setup_timer.cancel()
                 self._setup_timer = None
             self._led(CC_SETUP, LED_BRIGHT if msg.value > 0 else LED_DIM)
+            self._setup_pressed_at = time.monotonic() if msg.value > 0 else None
             if msg.value > 0:
-                self._setup_timer = threading.Timer(SETUP_HOLD_SECONDS, self._restart_mixxx)
+                eject = self._shift and self.music_drive and os.path.ismount(self.music_drive)
+                self._setup_action = 'eject' if eject else 'restart'
+                action = self._eject_drive if eject else self._restart_mixxx
+                self._setup_timer = threading.Timer(SETUP_HOLD_SECONDS, action)
                 self._setup_timer.daemon = True
                 self._setup_timer.start()
         elif msg.control == CC_USER and msg.value > 0:
@@ -213,11 +255,31 @@ class MixxxMidiBridge:
             self._led(CC_USER, LED_BRIGHT if self.show_stats else LED_DIM)
 
     def _restart_mixxx(self):
-        # systemd restarts this bridge too (push2-screen Requires=mixxx)
         print("[setup] SETUP held - restarting Mixxx", flush=True)
+        self._setup_pressed_at = None
+        self._restarting = True
         result = subprocess.run(RESTART_MIXXX_CMD, capture_output=True, text=True)
+        self._restarting = False
         if result.returncode != 0:
             print(f"[setup] restart failed: {result.stderr.strip()}", flush=True)
+
+    def _eject_drive(self):
+        print("[setup] SHIFT+SETUP held - ejecting the music drive", flush=True)
+        self._setup_pressed_at = None
+        self._ejecting = True
+        result = subprocess.run(EJECT_CMD, capture_output=True, text=True)
+        self._ejecting = False
+        self._ejected = result.returncode == 0
+        if result.returncode != 0:
+            print(f"[setup] eject failed: {result.stderr.strip()}", flush=True)
+
+    def _mixxx_running(self):
+        checked, up = self._mixxx_up
+        now = time.monotonic()
+        if now - checked > 1.0:
+            up = any((p.info['name'] or '') == 'mixxx' for p in psutil.process_iter(['name']))
+            self._mixxx_up = (now, up)
+        return up
 
     def rawmidi_listener(self, path):
         """Linux: reads the Mixxx Bridge SysEx straight from an ALSA raw MIDI
@@ -254,8 +316,34 @@ class MixxxMidiBridge:
 
     def render_display(self):
         """Render the Push 2 frame: the skin already shows the right page"""
+        frame = self._base_frame()
+        if self._setup_pressed_at is not None:
+            frame = self._setup_overlay(frame.copy())
+        return frame
+
+    def _status(self):
+        """(title, note) when the Pi isn't showing Mixxx, else None."""
+        if self._ejecting:
+            return 'EJECTING USB', 'saving the library - do not unplug'
+        if self._restarting:
+            return 'RESTARTING MIXXX', 'back in about a minute'
+        if not self.music_drive:
+            return None
+        if not os.path.ismount(self.music_drive):
+            if self._ejected:
+                return 'SAFE TO REMOVE', 'insert a USB drive to start Mixxx'
+            return 'INSERT USB DRIVE', 'Mixxx starts when a music drive is plugged in'
+        self._ejected = False
+        if not self._mixxx_running():
+            return 'STARTING MIXXX', 'loading the library from the USB drive'
+        return None
+
+    def _base_frame(self):
         if self.show_stats:
             return self.pi_stats.render()
+        status = self._status()
+        if status:
+            return self._box(Image.new('RGB', (960, 160), INK), *status)
         frame = self.skin_capture.capture()
         if frame is not None:
             self._last_skin_frame = frame
@@ -263,6 +351,32 @@ class MixxxMidiBridge:
         if self._last_skin_frame is not None:
             return self._last_skin_frame
         return self._not_found_frame()
+
+    def _setup_overlay(self, img):
+        """Countdown box while SETUP is held (release cancels)."""
+        held = time.monotonic() - (self._setup_pressed_at or time.monotonic())
+        left = max(SETUP_HOLD_SECONDS - held, 0)
+        what = 'EJECT USB' if self._setup_action == 'eject' else 'RESTART MIXXX'
+        title = f'{what} IN {int(left) + 1}' if left > 0 else what
+        return self._box(img, title, 'release SETUP to cancel', min(held / SETUP_HOLD_SECONDS, 1.0))
+
+    def _box(self, img, title, note, frac=None):
+        """Centred message box in the skin palette, optional progress bar."""
+        draw = ImageDraw.Draw(img)
+        x0, y0, x1, y1 = 250, 30, 710, 130
+        draw.rectangle([x0, y0, x1, y1], fill=INK, outline=LIME, width=2)
+        tw = draw.textlength(title, font=self._f_countdown)
+        draw.text(((x0 + x1 - tw) / 2, y0 + 12), title, font=self._f_countdown, fill=LINE)
+        nw = draw.textlength(note, font=self._f_note)
+        draw.text(((x0 + x1 - nw) / 2, y0 + 56), note, font=self._f_note, fill=DIM)
+        if frac is None:
+            return img
+        bx0, by0, bx1, by1 = x0 + 20, y1 - 22, x1 - 20, y1 - 12
+        draw.rectangle([bx0, by0, bx1, by1], outline=EDGE)
+        fill_x = bx0 + 1 + int((bx1 - bx0 - 2) * frac)
+        if fill_x > bx0 + 1:
+            draw.rectangle([bx0 + 1, by0 + 1, fill_x, by1 - 1], fill=LIME)
+        return img
 
     def _not_found_frame(self):
         img = Image.new('RGB', (960, 160), color=(0, 0, 0))
@@ -360,10 +474,12 @@ def main():
     parser.add_argument('--output', help='MIDI output port name')
     parser.add_argument('--rawmidi', help='Linux: read the bridge SysEx from this ALSA raw MIDI '
                                           'device instead (Pi: /dev/snd/midiC7D0)')
+    parser.add_argument('--music-drive', help='Pi: mount point of the USB music drive - enables '
+                                              'the drive status screens and SHIFT+SETUP eject')
 
     args = parser.parse_args()
 
-    bridge = MixxxMidiBridge()
+    bridge = MixxxMidiBridge(args.music_drive)
 
     if args.list_ports:
         bridge.list_midi_ports()

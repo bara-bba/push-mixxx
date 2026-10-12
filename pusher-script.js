@@ -1480,6 +1480,11 @@ PUSH2T._jogDelta = function (value) {
 PUSH2T._jogScratchActive = { '[Channel1]': false, '[Channel2]': false };
 PUSH2T._jogTouched       = { '[Channel1]': false, '[Channel2]': false };
 PUSH2T._jogBendBase      = { '[Channel1]': null,  '[Channel2]': null };
+// Stopped deck: where the platter was grabbed, and whether it was actually
+// turned. Grabbing alone drifts the playhead (~0.2 s), which made CUP treat
+// the deck as "moved off the cue" and set a new cue instead of previewing.
+PUSH2T._jogGrabPos       = { '[Channel1]': null,  '[Channel2]': null };
+PUSH2T._jogTurned        = { '[Channel1]': false, '[Channel2]': false };
 
 // Touch handlers (bound to encoder touch Note On/Off in the XML).
 //   Deck STOPPED + touched -> scratch the platter (velocity-sensitive).
@@ -1492,6 +1497,8 @@ PUSH2T._jogTouch = function (group, deckNum, v) {
         PUSH2T._jogTouched[group] = true;
         if (!engine.getValue(group, 'play')) {
             // Stopped: grab platter for scratching.
+            PUSH2T._jogGrabPos[group] = engine.getValue(group, 'playposition');
+            PUSH2T._jogTurned[group] = false;
             engine.scratchEnable(deckNum, 768, 33 + 1/3,
                                  PUSH2T.JOG_ALPHA, PUSH2T.JOG_BETA);
             PUSH2T._jogScratchActive[group] = true;
@@ -1502,8 +1509,15 @@ PUSH2T._jogTouch = function (group, deckNum, v) {
     } else {
         PUSH2T._jogTouched[group] = false;
         if (PUSH2T._jogScratchActive[group]) {
-            engine.scratchDisable(deckNum);
+            if (!PUSH2T._jogTurned[group] && PUSH2T._jogGrabPos[group] !== null) {
+                // touched but never turned: no ramp, and undo the grab drift
+                engine.scratchDisable(deckNum, false);
+                engine.setValue(group, 'playposition', PUSH2T._jogGrabPos[group]);
+            } else {
+                engine.scratchDisable(deckNum);
+            }
             PUSH2T._jogScratchActive[group] = false;
+            PUSH2T._jogGrabPos[group] = null;
         }
         // Release any tempo bend: snap back to the captured set rate.
         if (PUSH2T._jogBendBase[group] !== null) {
@@ -1525,6 +1539,7 @@ PUSH2T._jogTurn = function (group, deckNum, value) {
 
     if (PUSH2T._jogScratchActive[group] && engine.isScratching(deckNum)) {
         // Deck stopped + touched: velocity-sensitive scratch.
+        PUSH2T._jogTurned[group] = true;
         engine.scratchTick(deckNum, delta * PUSH2T.JOG_SCRATCH_VEL);
     } else if (PUSH2T._jogTouched[group]) {
         // Deck playing + touched: tempo bend that accumulates while turning
@@ -2013,6 +2028,29 @@ PUSH2T.fxEnc77 = function (c, t, v) { if (PUSH2T.scene === 'clip') { PUSH2T.fxEn
     var orig = PUSH2T[e[0]];
     PUSH2T[e[0]] = function (c, t, v, st, g) {
         if (PUSH2T.scene === 'clip') { PUSH2T.fxEncoder(e[1], v); return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
+// Clip scene: touching an effect's encoder selects that effect (same marker the
+// arrows move), so you see which one you're about to turn. 3-effect view only:
+// in the expanded view the encoders are the selected effect's own knobs.
+// Encoders 1-3 / 5-7 = unit 1 / unit 2 effects; touch notes are 0x00-0x07.
+PUSH2T.fxTouch = function (encoder, v) {
+    if (v === 0 || PUSH2T.fxMode || PUSH2T.colorMode || PUSH2T.scene !== 'clip') { return; }
+    var u = encoder < 4 ? 1 : 2, idx = encoder % 4;
+    if (idx < 3) { PUSH2T.fxSelect((u - 1) * 3 + idx + 1); }
+};
+PUSH2T.fxTouch2 = function (c, t, v) { PUSH2T.fxTouch(1, v); };
+PUSH2T.fxTouch3 = function (c, t, v) { PUSH2T.fxTouch(2, v); };
+PUSH2T.fxTouch6 = function (c, t, v) { PUSH2T.fxTouch(5, v); };
+PUSH2T.fxTouch7 = function (c, t, v) { PUSH2T.fxTouch(6, v); };
+// Encoders 1 and 5 are the jogs elsewhere: in Clip their touch-on selects
+// instead of grabbing the platter; touch-off still goes to the jog so a
+// scratch started in another scene gets released.
+[['jogTouchA', 0], ['jogTouchB', 4]].forEach(function (e) {
+    var orig = PUSH2T[e[0]];
+    PUSH2T[e[0]] = function (c, t, v, st, g) {
+        if (v > 0 && PUSH2T.scene === 'clip') { PUSH2T.fxTouch(e[1], v); return; }
         return orig.call(PUSH2T, c, t, v, st, g);
     };
 });

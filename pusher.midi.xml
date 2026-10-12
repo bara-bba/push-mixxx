@@ -645,6 +645,24 @@
                 <status>0x80</status><midino>0x04</midino>
                 <options><script-binding/></options></control>
 
+            <!-- Encoder touch -> select that effect (Clip scene, 3-effect view) -->
+            <control><group></group><key>PUSH2T.fxTouch2</key>
+                <description>FX select – encoder 2 touch (note 0x01)</description>
+                <status>0x90</status><midino>0x01</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.fxTouch3</key>
+                <description>FX select – encoder 3 touch (note 0x02)</description>
+                <status>0x90</status><midino>0x02</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.fxTouch6</key>
+                <description>FX select – encoder 6 touch (note 0x05)</description>
+                <status>0x90</status><midino>0x05</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.fxTouch7</key>
+                <description>FX select – encoder 7 touch (note 0x06)</description>
+                <status>0x90</status><midino>0x06</midino>
+                <options><script-binding/></options></control>
+
             <!-- Jog rotation -->
             <control><group></group><key>PUSH2T.rateA</key>
                 <description>Jog Deck A – CC71 (0x47) encoder 1 (scratch/pitch-bend)</description>

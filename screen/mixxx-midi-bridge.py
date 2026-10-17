@@ -59,7 +59,8 @@ TYPE_AUDIO = 0x05  # dropoutsHi dropoutsLo enginePct (bridge-script.js)
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
-PUSH_PORT_MATCH = 'Push 2 Live Port'
+PUSH_PORT_MATCH = 'Push 2 Live Port'  # Pi: --push-port "VirMIDI 7-1" (push2_midi_relay.py)
+REDRAW_CC = 127  # on channel 16: the relay's "Push reconnected" signal
 CC_DELETE = 118  # push-mixxx's DELETE modifier; also closes Mixxx popups here
 CC_SETUP = 30  # unused by push-mixxx; hold to restart Mixxx
 SETUP_HOLD_SECONDS = 3
@@ -90,7 +91,8 @@ class MixxxState:
 class MixxxMidiBridge:
     """Bridge between the Pusher160 skin capture / push-mixxx SysEx and the Push 2 display."""
 
-    def __init__(self, music_drive=None):
+    def __init__(self, music_drive=None, push_port=PUSH_PORT_MATCH):
+        self.push_port = push_port  # MIDI port the Push buttons/LEDs are reached through
         self.music_drive = music_drive  # Pi: mount point of the USB music drive
         self._shift = False
         self._setup_action = 'restart'
@@ -205,7 +207,7 @@ class MixxxMidiBridge:
         """Listens to the Push alongside Mixxx so DELETE can close popups.
         ALSA lets both read the port; on Windows Mixxx holds it exclusively,
         so this just fails quietly there."""
-        port = next((p for p in mido.get_input_names() if PUSH_PORT_MATCH in p), None)
+        port = next((p for p in mido.get_input_names() if self.push_port in p), None)
         if not port:
             return
         try:
@@ -214,7 +216,7 @@ class MixxxMidiBridge:
         except Exception as e:
             print(f"[!] Push buttons unavailable ({e}) - DELETE won't close popups")
             return
-        out_port = next((p for p in mido.get_output_names() if PUSH_PORT_MATCH in p), None)
+        out_port = next((p for p in mido.get_output_names() if self.push_port in p), None)
         try:
             self.push_out = mido.open_output(out_port) if out_port else None
         except Exception as e:
@@ -228,6 +230,10 @@ class MixxxMidiBridge:
 
     def _on_push_message(self, msg):
         if msg.type != 'control_change':
+            return
+        if msg.channel == 15 and msg.control == REDRAW_CC:
+            self._led(CC_SETUP, LED_DIM)
+            self._led(CC_USER, LED_BRIGHT if self.show_stats else LED_DIM)
             return
         if msg.control == CC_DELETE and msg.value > 0:
             closed = close_mixxx_popups()
@@ -411,7 +417,9 @@ class MixxxMidiBridge:
                 data, self._next_frame = self._next_frame, None
             if data is None:
                 continue
-            self.push2.send_prepared(data)
+            if not self.push2.send_prepared(data):
+                self._reconnect_display()
+                continue
 
             sent += 1
             now = time.perf_counter()
@@ -420,13 +428,21 @@ class MixxxMidiBridge:
                 print(f"[display] {self.fps:.1f} fps", flush=True)
                 sent, window_start = 0, now
 
+    def _reconnect_display(self):
+        """Push unplugged (or never found): retry the USB display once a second."""
+        print("[display] Push 2 display lost - waiting for it to come back", flush=True)
+        self.push2.disconnect()
+        while self.running and not self.push2.connect():
+            time.sleep(1.0)
+
     def start(self, rawmidi_path=None):
         """Start the bridge"""
         print("Starting Mixxx MIDI Bridge...")
 
         if not self.push2.connect():
-            print("Failed to connect to Push 2")
-            return False
+            print("Push 2 not found - waiting for it")
+            self.running = True
+            self._reconnect_display()
 
         self.running = True
         self.connect_push_buttons()
@@ -474,12 +490,14 @@ def main():
     parser.add_argument('--output', help='MIDI output port name')
     parser.add_argument('--rawmidi', help='Linux: read the bridge SysEx from this ALSA raw MIDI '
                                           'device instead (Pi: /dev/snd/midiC7D0)')
+    parser.add_argument('--push-port', default=PUSH_PORT_MATCH,
+                        help='MIDI port name (substring) for the Push buttons/LEDs - Pi: "VirMIDI 7-1"')
     parser.add_argument('--music-drive', help='Pi: mount point of the USB music drive - enables '
                                               'the drive status screens and SHIFT+SETUP eject')
 
     args = parser.parse_args()
 
-    bridge = MixxxMidiBridge(args.music_drive)
+    bridge = MixxxMidiBridge(args.music_drive, args.push_port)
 
     if args.list_ports:
         bridge.list_midi_ports()

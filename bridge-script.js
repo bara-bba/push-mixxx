@@ -37,7 +37,8 @@ PUSH2BRIDGE.TYPE_MIXER = 0x02;
 PUSH2BRIDGE.TYPE_SCENE = 0x03;
 // type 0x05 AUDIO: dropoutsHi dropoutsLo enginePct - Mixxx 2.5 only has the
 // momentary [App],audio_latency_overload flag (its red overload light), so
-// rising edges are counted here; enginePct = [App],audio_latency_usage (0-127).
+// rising edges are counted here (and logged to mixxx.log, so they're recorded
+// even without the screen app); enginePct = [App],audio_latency_usage x 100.
 PUSH2BRIDGE.TYPE_AUDIO = 0x05;
 PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
 PUSH2BRIDGE.dropouts = 0;
@@ -90,9 +91,13 @@ PUSH2BRIDGE.sendScene = function() {
 
 PUSH2BRIDGE.sendAudio = function() {
     var overload = engine.getValue("[App]", "audio_latency_overload") > 0 ? 1 : 0;
-    if (overload && !PUSH2BRIDGE.overloadWas) { PUSH2BRIDGE.dropouts++; }
+    // audio_latency_usage is a 0..1 fraction of the buffer time (skins draw it as a VU meter)
+    var usage = Math.max(0, Math.min(127, Math.round(engine.getValue("[App]", "audio_latency_usage") * 100)));
+    if (overload && !PUSH2BRIDGE.overloadWas) {
+        PUSH2BRIDGE.dropouts++;
+        print("[PUSH2BRIDGE] audio dropout #" + PUSH2BRIDGE.dropouts + " (engine load " + usage + "%)");
+    }
     PUSH2BRIDGE.overloadWas = overload;
-    var usage = Math.max(0, Math.min(127, Math.round(engine.getValue("[App]", "audio_latency_usage"))));
     var n = PUSH2BRIDGE.split14(PUSH2BRIDGE.dropouts % 16384);
     midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_AUDIO, n[0], n[1], usage, 0xF7], 7);
 };

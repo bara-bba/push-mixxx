@@ -645,6 +645,12 @@
                 <status>0x80</status><midino>0x04</midino>
                 <options><script-binding/></options></control>
 
+            <!-- Sent by screen/push2_midi_relay.py when the Push reconnects (Pi) -->
+            <control><group></group><key>PUSH2T.redraw</key>
+                <description>Push reconnected – repaint all LEDs (CC 127, channel 16)</description>
+                <status>0xBF</status><midino>0x7F</midino>
+                <options><script-binding/></options></control>
+
             <!-- Encoder touch -> select that effect (Clip scene, 3-effect view) -->
             <control><group></group><key>PUSH2T.fxTouch2</key>
                 <description>FX select – encoder 2 touch (note 0x01)</description>

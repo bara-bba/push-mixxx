@@ -287,6 +287,21 @@ PUSH2T.init = function (id, debugging) {
     }
 };
 
+// Pi: the Push talks to Mixxx through screen/push2_midi_relay.py on a VirMIDI
+// port, so Mixxx never sees it unplugged. A replugged Push powers up dark;
+// the relay then sends CC 127 on channel 16 (bound in the XML) to repaint it.
+PUSH2T.redraw = function (c, t, v) {
+    if (v === 0) { return; }
+    print('[PUSH2T] Push reconnected - redrawing');
+    PUSH2T.clearAllPads();
+    PUSH2T.stripRelease();
+    PUSH2T.drawStaticColors();
+    PUSH2T.conns.forEach(function (conn) { conn.trigger(); });
+    PUSH2T.drawTopRow();
+    PUSH2T.drawScenes();
+    PUSH2T.drawLoadNav();
+};
+
 PUSH2T.shutdown = function () {
     // Release any active scratch so decks don't get stuck
     if (engine.isScratching(1)) { engine.scratchDisable(1); }

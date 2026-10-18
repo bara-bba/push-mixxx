@@ -118,13 +118,17 @@ def rewrite(state_b64):
 
 
 def main():
-    db_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DB
+    # --no-backup: the Pi runs this before every Mixxx start (Mixxx saves its own
+    # layout over ours on quit), so it mustn't leave a .bak each time.
+    args = [a for a in sys.argv[1:] if a != '--no-backup']
+    db_path = args[0] if args else DEFAULT_DB
     if any((p.info['name'] or '').lower() in ('mixxx.exe', 'mixxx') for p in psutil.process_iter(['name'])):
         sys.exit('Close Mixxx first - it would overwrite the layout on exit.')
 
-    backup = f'{db_path}.{time.strftime("%Y%m%d-%H%M%S")}.bak'
-    shutil.copy2(db_path, backup)
-    print('backup:', backup)
+    if '--no-backup' not in sys.argv:
+        backup = f'{db_path}.{time.strftime("%Y%m%d-%H%M%S")}.bak'
+        shutil.copy2(db_path, backup)
+        print('backup:', backup)
 
     db = sqlite3.connect(db_path)
     rows = db.execute("select name, value from settings where name like '%header_state_pb'").fetchall()

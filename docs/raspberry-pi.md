@@ -4,7 +4,7 @@ status: active
 area: dj
 tags: [dj, mixxx, push2, raspberry-pi]
 created: 2026-10-17
-updated: 2026-10-17
+updated: 2026-10-26
 ---
 
 # Headless Raspberry Pi deployment
@@ -15,14 +15,51 @@ Audio 6 as the sound card, and the music on a USB drive. The Pi runs this
 repo's `commissioning` branch from `~/push-mixxx`; most pieces below are
 system config on the Pi itself (not in the repo).
 
-| Device page | Mix page |
-|---|---|
-| ![Device](screenshots/push-device.png) | ![Mix](screenshots/push-mix.png) |
-| **Browse page** | **FX page (Clip scene)** |
-| ![Browse](screenshots/push-browse.png) | ![FX](screenshots/push-fx.png) |
+## Screens
 
-Captured from the Pi's virtual display (what the Push 2 shows) with two decks
-playing; the line under the artist is the beat-sync meter.
+Captured from the Pi's virtual display (exactly what the Push 2 shows), with a
+track loaded on each deck from an exported USB drive.
+
+**Device page** (Device scene): cover, title/artist/album, remaining time, BPM,
+pitch, overview with cue marker, transport/loop row, hotcues.
+
+![Device](screenshots/push-device.png)
+
+**Mix page** (Mix scene): both decks' scrolling waveforms. While both decks
+play, the line under each artist becomes the beat-sync meter.
+
+![Mix](screenshots/push-mix.png)
+
+**FX page** (Clip scene): the two effect units with their default chains,
+Reverb/Filter/Flanger and Echo/Filter/Phaser; the lime bar marks the selected
+effect (arrows or touching its encoder).
+
+![FX](screenshots/push-fx.png)
+
+**Browse page** (Browse scene): preview deck, library sidebar, and the track
+table with cover art, its columns lined up under the sort labels (here sorted by
+BPM, descending; the selected row is lime).
+
+![Browse](screenshots/push-browse.png)
+
+The sidebar's **Playlists** section holds the playlists imported from the drive's
+`Playlists/*.m3u8` (track count and length after each name).
+
+![Browse, playlists](screenshots/push-browse-playlists.png)
+
+### Drawn by the screen app
+
+These are rendered by `screen/mixxx-midi-bridge.py` on top of (or instead of) the
+skin capture. The stats page shows sample numbers.
+
+| | |
+|---|---|
+| **User**: Pi stats page | ![Pi stats](screenshots/screen-pi-stats.png) |
+| hold **Setup**: restart countdown | ![Restart countdown](screenshots/screen-setup-restart.png) |
+| **Shift** + hold **Setup**: eject countdown | ![Eject countdown](screenshots/screen-eject-countdown.png) |
+| after eject | ![Safe to remove](screenshots/screen-safe-to-remove.png) |
+| no drive plugged in | ![Insert USB drive](screenshots/screen-insert-usb.png) |
+| drive in, Mixxx loading | ![Starting Mixxx](screenshots/screen-starting.png) |
 
 ## How it fits together
 
@@ -46,8 +83,7 @@ Services (systemd): `xvfb`, `mixxx`, `push2-screen`, `push2-midi-relay`,
 | **Shift** + hold **Setup** 3 s | eject the USB drive (Mixxx quits cleanly, saves cues; "Safe to remove") |
 | **Delete** | closes any Mixxx popup window that landed on the screen |
 
-![Pi stats page](screenshots/preview-pi-stats.png)
-![Eject countdown and safe-to-remove](screenshots/preview-eject.png)
+See [Screens](#screens) for what each one looks like.
 
 ## Behaviour worth knowing
 

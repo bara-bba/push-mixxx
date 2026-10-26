@@ -684,8 +684,9 @@ SORT_LABELS = [('TITLE', 2), ('ARTIST', 1), ('ALBUM', 3), ('BPM', 15), ('KEY', 2
 
 def lib_top_row():
     widths = dict(LIB_COLUMNS)
-    # TITLE also covers the slim preview column in front of the titles
-    label_w = [widths['preview'] + widths['title'], widths['artist'], widths['album'], widths['bpm'], widths['key'],
+    # TITLE also covers the slim preview and cover art columns in front of the titles
+    label_w = [widths['preview'] + widths['coverart'] + widths['title'], widths['artist'], widths['album'],
+               widths['bpm'], widths['key'],
                widths['duration'] + LIB_SCROLLBAR_W]
     cells = ''
     for i, ((text, _), w) in enumerate(zip(SORT_LABELS, label_w)):

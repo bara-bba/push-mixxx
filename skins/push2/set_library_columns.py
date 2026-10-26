@@ -30,8 +30,8 @@ else:
 # Short columns (BPM/Key/Length) get just enough for their values so the text
 # columns get the room; 'preview' marks the song playing in preview and sits
 # under the TITLE label at Mixxx's minimum width (~39px).
-COLUMNS = [('preview', 39), ('title', 199), ('artist', 150), ('album', 130), ('bpm', 56), ('key', 48),
-           ('duration', 52)]
+COLUMNS = [('preview', 39), ('coverart', 30), ('title', 169), ('artist', 150), ('album', 130), ('bpm', 56),
+           ('key', 48), ('duration', 52)]
 SCROLLBAR_W = 4  # the table's thin vertical scrollbar, right of the last column
 
 # HeaderState { repeated HeaderSection sections = 1; sort fields 2-4 }
@@ -87,9 +87,12 @@ def rewrite(state_b64):
     fields = _fields(base64.b64decode(state_b64))
     sections = [dict((f, v) for f, _, v in _fields(v)) for f, _, v in fields if f == 1]
     names = [s.get(5, b'').decode() for s in sections]
+    widths = dict(COLUMNS)
     columns = COLUMNS
     if 'preview' not in names:  # e.g. Missing/Hidden: title takes the preview's width too
-        columns = [('title', COLUMNS[0][1] + COLUMNS[1][1])] + COLUMNS[2:]
+        columns = [(n, w + widths['preview'] if n == 'title' else w) for n, w in COLUMNS if n != 'preview']
+    if 'coverart' not in names:
+        columns = [(n, w + widths['coverart'] if n == 'title' else w) for n, w in columns if n != 'coverart']
     if not all(name in names for name, _ in columns):
         return None  # not a track table (e.g. the folder browser)
 

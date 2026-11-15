@@ -4,7 +4,7 @@ status: active
 area: dj
 tags: [dj, mixxx, push2, raspberry-pi]
 created: 2026-10-17
-updated: 2026-10-26
+updated: 2026-11-15
 ---
 
 # Headless Raspberry Pi deployment
@@ -36,14 +36,27 @@ effect (arrows or touching its encoder).
 
 ![FX](screenshots/push-fx.png)
 
-**Browse page** (Browse scene): preview deck, library sidebar, and the track
-table with cover art, its columns lined up under the sort labels (here sorted by
-BPM, descending; the selected row is lime).
+**Browse page** (Browse scene): preview deck, library nav, and the track table
+with cover art, its columns lined up under the sort labels (here sorted by BPM,
+descending; the selected row is lime). The nav (Tracks, Playlists, Auto DJ,
+Computer, Recordings, History, Analyze) is painted by the screen app, since
+Mixxx's sidebar can't be reordered or have Crates hidden; the Push script steers
+Mixxx's real sidebar behind it. Left = nav, Right = into the songs; on Computer
+or History, Right opens Mixxx's folder tree and Left collapses it again.
 
 ![Browse](screenshots/push-browse.png)
 
-The sidebar's **Playlists** section holds the playlists imported from the drive's
-`Playlists/*.m3u8` (track count and length after each name).
+On **Playlists** the right pane lists the playlists imported from the drive's
+`Playlists/*.m3u8` (track count and length after each name). Right puts a
+cursor on the list (Up/Down or the browse encoder move it), Right again opens
+that playlist's songs, Left goes back to the list.
+
+Convert (on the list, or inside an open playlist) analyses that playlist in
+the background: the screen app picks "Analyse entire Playlist" from Mixxx's
+right-click menu on it (`screen/playlist_analysis.py`, via `xdotool` on the
+Xvfb display), so nothing loads and you keep browsing. A bar at the bottom of
+the Browse page shows how many of its tracks are done (counted from the stored
+waveforms in the drive's library); Mixxx's Analyze view shows the same queue.
 
 ![Browse, playlists](screenshots/push-browse-playlists.png)
 

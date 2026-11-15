@@ -21,6 +21,7 @@ SysEx frame: F0 7D <type> <deck> <payload...> F7
 
 import importlib
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -30,6 +31,9 @@ import psutil
 from PIL import Image, ImageDraw, ImageFont
 
 from mixxx_capture import MixxxSkinCapture, close_mixxx_popups, focus_mixxx
+import playlist_analysis
+from playlist_analysis import AnalysisProgress
+from playlist_page import NAV_NAMES, NAV_TREE_OPEN, PlaylistPage
 from pi_stats import BODY_BOLD_FONTS, DISPLAY_FONTS, EDGE, INK, LIME, LINE, DIM, PiStats, _font
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
@@ -56,6 +60,23 @@ FPS_LOG_SECONDS = 5
 SYSEX_ID = 0x7D
 TYPE_SCENE = 0x03
 TYPE_AUDIO = 0x05  # dropoutsHi dropoutsLo enginePct (bridge-script.js)
+TYPE_PLAYLIST = 0x06  # hi lo of [Skin],pusher_playlist (playlist_page.py)
+
+# Pi: raw device of the VirMIDI port Mixxx's Push mapping reads (the relay's
+# Mixxx side); bytes written here reach the mapping like Push input.
+MIXXX_RAWMIDI = '/dev/snd/midiC7D1'
+PLAYLISTS_CC = bytes([0xBF, 0x7E])  # + count: pusher-script.js PUSH2T.plPage
+DEPTH_CC = bytes([0xBF, 0x7D])  # + 1 top-level / 2 deeper: PUSH2T.navDepth
+ANALYSED_CC = bytes([0xBF, 0x7C])  # + 1 queued / 2 failed: PUSH2T.plAnalysed
+RESYNC_CC = bytes([0xBF, 0x7B, 0x01])  # PUSH2T.navResync
+PL_ANALYSE = 256  # pusher_playlist >= this: Convert asked to analyse playlist (value - 256)
+ANALYSE_SETTLE_SECONDS = 0.4  # the script's sidebar steps, before the right-click
+FREEZE_AFTER_SECONDS = 0.4  # the Push image stays still this long after a request
+RESYNC_AFTER_SECONDS = 1.0  # Playlists page under another nav entry this long = drifted
+RESYNC_EVERY_SECONDS = 3.0
+PLAYLISTS_RESEND_SECONDS = 2.0
+PLAYLISTS_GONE_SECONDS = 0.8
+FRAME_DUMP = '/tmp/push2-frame.png'  # written on SIGUSR1 (debugging)
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
 
@@ -86,6 +107,8 @@ class MixxxState:
         self.dropouts = None      # audio underruns since Mixxx started
         self.engine_pct = None    # Mixxx audio engine load, % of the buffer time
         self.dropout_times = []   # monotonic times of dropouts seen by this bridge
+        self.playlist = 0         # pusher_playlist: 0 off, 1..127 cursor + 1, 128 + cursor = open, 256 + cursor = analyse it
+        self.nav = 0              # pusher_nav: painted nav cursor + 1 (0 = not set yet), 100 = tree open
 
 
 class MixxxMidiBridge:
@@ -115,6 +138,18 @@ class MixxxMidiBridge:
         self.fps = 0.0
         self.pi_stats = PiStats(lambda: self.fps, self._audio_stats)
         self.skin_capture = MixxxSkinCapture()
+        self.playlist_page = PlaylistPage(music_drive)  # names over Mixxx's Playlists text page
+        self._pl_sent = (None, 0.0)  # (count, monotonic) last reported to the mapping
+        self._depth_sent = None
+        self._pl_gone_since = None
+        self.analysis = AnalysisProgress(music_drive)  # Convert on a playlist
+        self._raw_frame = None      # newest capture without overlays
+        self._freeze_until = 0.0    # hold the Push image still until then (monotonic)
+        self._drift_since = None    # Playlists page shown under another nav entry since
+        self._resync_at = 0.0
+        self._dump_frame = False
+        if hasattr(signal, 'SIGUSR1'):
+            signal.signal(signal.SIGUSR1, lambda *_: setattr(self, '_dump_frame', True))
         self._last_skin_frame = None
         self._frame_ready = threading.Condition()
         self._next_frame = None
@@ -185,6 +220,14 @@ class MixxxMidiBridge:
                 ok = focus_mixxx()
                 print(f"[focus] Browse: Mixxx {'in front' if ok else 'could NOT be focused'}")
             self.state.scene = scene
+        elif frame_type == TYPE_PLAYLIST and len(data) >= 4:
+            playlist = (data[2] << 7) | data[3]
+            if playlist >= PL_ANALYSE and self.state.playlist < PL_ANALYSE:
+                threading.Thread(target=self._analyse_playlist, args=(playlist - PL_ANALYSE,),
+                                 daemon=True).start()
+            self.state.playlist = playlist
+            if len(data) >= 5:
+                self.state.nav = data[4]
         elif frame_type == TYPE_AUDIO and len(data) >= 5:
             count, pct = (data[2] << 7) | data[3], data[4]
             st = self.state
@@ -325,6 +368,10 @@ class MixxxMidiBridge:
         frame = self._base_frame()
         if self._setup_pressed_at is not None:
             frame = self._setup_overlay(frame.copy())
+        if self._dump_frame:  # kill -USR1: save exactly what the Push shows
+            self._dump_frame = False
+            frame.save(FRAME_DUMP)
+            print(f'[display] frame saved to {FRAME_DUMP}', flush=True)
         return frame
 
     def _status(self):
@@ -352,11 +399,117 @@ class MixxxMidiBridge:
             return self._box(Image.new('RGB', (960, 160), INK), *status)
         frame = self.skin_capture.capture()
         if frame is not None:
+            self._raw_frame = frame
+            if self._frozen() and self._last_skin_frame is not None:
+                return self._last_skin_frame   # Mixxx's sidebar is being worked behind it
+            frame = self._playlists_overlay(frame.copy())
+        if frame is not None:
             self._last_skin_frame = frame
             return frame
         if self._last_skin_frame is not None:
             return self._last_skin_frame
         return self._not_found_frame()
+
+    def _playlists_overlay(self, frame):
+        """Library nav + playlist list over the Browse page (playlist_page.py)."""
+        if self.state.scene != 'browse':
+            return frame
+        pl, nav = self.state.playlist, self.state.nav
+        shown = PlaylistPage.shown(frame)
+        self._report_playlists(self.playlist_page.count if shown else 0)
+        depth = PlaylistPage.depth(frame)
+        if depth and depth != self._depth_sent:
+            self._depth_sent = depth
+            self._send_mixxx(DEPTH_CC + bytes([depth]))
+            print(f'[library] sidebar highlight depth {depth}', flush=True)
+        if shown:
+            rows = 7 if self.analysis.showing else 8   # the analysis bar takes the 8th
+            frame = self.playlist_page.draw(frame, pl - 1 if 0 < pl < 128 else -1, rows)
+        if nav != NAV_TREE_OPEN:
+            frame = self.playlist_page.draw_nav(frame, max(nav - 1, 0))
+        self._check_drift(shown, pl, nav)
+        return self.analysis.draw(frame)
+
+    def _frozen(self):
+        if self.state.playlist >= PL_ANALYSE:
+            self._freeze_until = time.monotonic() + FREEZE_AFTER_SECONDS
+        return time.monotonic() < self._freeze_until
+
+    def _analyse_playlist(self, cursor):
+        """Convert on a playlist (pusher-script.js PUSH2T.plAnalyse): the
+        script has selected it in Mixxx's sidebar; queue it for analysis."""
+        ok = False
+        try:
+            time.sleep(ANALYSE_SETTLE_SECONDS)
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:   # until the highlight is on a playlist
+                frame = self._raw_frame
+                if frame is not None and PlaylistPage.depth(frame) == 2:
+                    break
+                time.sleep(0.05)
+            target = self.playlist_page.playlist_at(cursor)
+            if frame is not None and target and PlaylistPage.depth(frame) == 2:
+                ok = playlist_analysis.queue(frame)
+                if ok:
+                    self.analysis.add(*target)
+            else:
+                print('[analyse] the sidebar never reached the playlist', flush=True)
+        except Exception as e:
+            print(f'[analyse] failed: {e}', flush=True)
+        finally:
+            self._send_mixxx(ANALYSED_CC + bytes([1 if ok else 2]))
+
+    def _check_drift(self, shown, pl, nav):
+        """Mixxx's Playlists page under another painted nav entry: the real
+        sidebar drifted from the nav - ask the script to re-home it."""
+        drifted = (shown and pl == 0 and 0 < nav != NAV_TREE_OPEN
+                   and NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)] != 'Playlists')
+        now = time.monotonic()
+        if not drifted:
+            self._drift_since = None
+            return
+        if self._drift_since is None:
+            self._drift_since = now
+        if now - self._drift_since >= RESYNC_AFTER_SECONDS and now - self._resync_at >= RESYNC_EVERY_SECONDS:
+            self._resync_at = now
+            print(f'[library] sidebar drifted from the nav ({NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)]}), resync',
+                  flush=True)
+            self._send_mixxx(RESYNC_CC)
+
+    def _report_playlists(self, count):
+        """Tell the Push mapping whether the Playlists page shows (on change,
+        and again every couple of seconds in case Mixxx restarted)."""
+        count = min(count, 127)
+        last, at = self._pl_sent
+        now = time.monotonic()
+        # "gone" only once it stayed gone a moment: the sidebar passing
+        # through other rows (opening / analysing a playlist) mustn't drop
+        # the list's cursor
+        if count == 0 and last:
+            if self._pl_gone_since is None:
+                self._pl_gone_since = now
+            if now - self._pl_gone_since < PLAYLISTS_GONE_SECONDS:
+                return
+        self._pl_gone_since = None
+        if count == last and (count == 0 or now - at < PLAYLISTS_RESEND_SECONDS):
+            return
+        if count != last:
+            print(f'[library] playlists page: {count}', flush=True)
+        self._pl_sent = (count, now)
+        self._send_mixxx(PLAYLISTS_CC + bytes([count]))
+
+    def _send_mixxx(self, data):
+        """Bytes to the Push mapping, as if they came from the Push (Pi only)."""
+        if not os.path.exists(MIXXX_RAWMIDI):
+            return
+        try:
+            fd = os.open(MIXXX_RAWMIDI, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(fd, data)
+            finally:
+                os.close(fd)
+        except OSError as e:
+            print(f'[library] cannot reach the mapping: {e}', flush=True)
 
     def _setup_overlay(self, img):
         """Countdown box while SETUP is held (release cancels)."""

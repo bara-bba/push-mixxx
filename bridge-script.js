@@ -40,6 +40,13 @@ PUSH2BRIDGE.TYPE_SCENE = 0x03;
 // rising edges are counted here (and logged to mixxx.log, so they're recorded
 // even without the screen app); enginePct = [App],audio_latency_usage x 100.
 PUSH2BRIDGE.TYPE_AUDIO = 0x05;
+// type 0x06 PLAYLIST: hi lo of [Skin],pusher_playlist (pusher-script.js
+// PUSH2T.pl: 0 off, 1..127 list cursor + 1, 128 + cursor = playlist open,
+// 256 + cursor = Convert: analyse the playlist highlighted in the sidebar),
+// then [Skin],pusher_nav (PUSH2T.nav: painted nav cursor + 1, 100 = tree open)
+PUSH2BRIDGE.TYPE_PLAYLIST = 0x06;
+PUSH2BRIDGE.playlist = 0;
+PUSH2BRIDGE.nav = 0;
 PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
 PUSH2BRIDGE.dropouts = 0;
 PUSH2BRIDGE.overloadWas = 0;
@@ -83,6 +90,19 @@ PUSH2BRIDGE.connectScene = function() {
         PUSH2BRIDGE.sceneId = Math.round(v);
     });
     if (PUSH2BRIDGE.sceneConn) { PUSH2BRIDGE.sceneConn.trigger(); }
+    var plConn = engine.makeConnection('[Skin]', 'pusher_playlist', function(v) {
+        PUSH2BRIDGE.playlist = Math.max(0, Math.min(16383, Math.round(v)));
+    });
+    if (plConn) { plConn.trigger(); }
+    var navConn = engine.makeConnection('[Skin]', 'pusher_nav', function(v) {
+        PUSH2BRIDGE.nav = Math.max(0, Math.min(127, Math.round(v)));
+    });
+    if (navConn) { navConn.trigger(); }
+};
+
+PUSH2BRIDGE.sendPlaylist = function() {
+    var p = PUSH2BRIDGE.split14(PUSH2BRIDGE.playlist);
+    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_PLAYLIST, p[0], p[1], PUSH2BRIDGE.nav, 0xF7], 7);
 };
 
 PUSH2BRIDGE.sendScene = function() {
@@ -109,6 +129,7 @@ PUSH2BRIDGE.tick = function() {
     PUSH2BRIDGE.sendMixer();
     PUSH2BRIDGE.sendScene();
     PUSH2BRIDGE.sendAudio();
+    PUSH2BRIDGE.sendPlaylist();
 };
 
 PUSH2BRIDGE.init = function() {

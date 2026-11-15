@@ -914,6 +914,10 @@ WTrackTableView {{ qproperty-trackPlayedColor: {FAINT}; qproperty-focusBorderCol
 #LibraryBPMButton::indicator {{ width: 0px; height: 0px; image: none; border: none; }}
 WTrackTableView::item:selected, WLibrarySidebar::item:selected {{ color: {INK}; background-color: {LIME}; }}
 WLibrarySidebar {{ show-decoration-selected: 0; outline: none; }}
+/* Marker for the screen app: a sidebar root's text page (e.g. Playlists) gets
+   this one-off near-black, so mixxx-midi-bridge.py can spot it and draw the
+   playlist names over it (TEXT_PAGE_MARK there) */
+WLibraryTextBrowser {{ background-color: #0B0B0D; }}
 /* Thin scroll position indicators (nothing is scrolled with a mouse here) */
 QScrollBar:vertical {{ width: 4px; background: {INK}; border: none; margin: 0px; }}
 QScrollBar::handle:vertical {{ background: {EDGE}; min-height: 12px; border: none; }}

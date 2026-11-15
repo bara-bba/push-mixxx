@@ -58,6 +58,13 @@
       <attribute config_key="[Skin],pusher_sync_ok_2">0</attribute>
       <!-- batch-analyze progress (track number, 0 = idle), written by pusher-script.js -->
       <attribute config_key="[Skin],pusher_analyze">0</attribute>
+      <!-- Browse page playlist list (pusher-script.js PUSH2T.pl, drawn by screen/playlist_page.py):
+           0 off, 1..127 = list cursor + 1, 128 + cursor = that playlist open,
+           256 + cursor = Convert: analyse it (screen/playlist_analysis.py) -->
+      <attribute config_key="[Skin],pusher_playlist">0</attribute>
+      <!-- Browse page nav entry painted by the screen app (pusher-script.js PUSH2T.nav):
+           cursor + 1, 100 = Mixxx's own tree open (Computer/History) -->
+      <attribute config_key="[Skin],pusher_nav">0</attribute>
       <!-- FX page: effect slot picked with the Push arrows (1-6), written by pusher-script.js -->
       <attribute config_key="[Skin],pusher_fx_sel">1</attribute>
       <!-- FX page: 0 = 3 effects per unit, 1 = the selected effect expanded (hold RESET) -->
@@ -211,6 +218,10 @@ WTrackTableView { qproperty-trackPlayedColor: #5A5A55; qproperty-focusBorderColo
 #LibraryBPMButton::indicator { width: 0px; height: 0px; image: none; border: none; }
 WTrackTableView::item:selected, WLibrarySidebar::item:selected { color: #0B0B0B; background-color: #C8F53C; }
 WLibrarySidebar { show-decoration-selected: 0; outline: none; }
+/* Marker for the screen app: a sidebar root's text page (e.g. Playlists) gets
+   this one-off near-black, so mixxx-midi-bridge.py can spot it and draw the
+   playlist names over it (TEXT_PAGE_MARK there) */
+WLibraryTextBrowser { background-color: #0B0B0D; }
 /* Thin scroll position indicators (nothing is scrolled with a mouse here) */
 QScrollBar:vertical { width: 4px; background: #0B0B0B; border: none; margin: 0px; }
 QScrollBar::handle:vertical { background: #3A3A36; min-height: 12px; border: none; }

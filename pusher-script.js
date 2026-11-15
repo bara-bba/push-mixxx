@@ -1860,8 +1860,8 @@ PUSH2T.connectRecording = function () {
 
 // ──── ARROW BUTTONS (CC44 Left, CC45 Right, CC46 Up, CC47 Down) ────────────────
 // Browse scene: Up/Down move within whichever list has
-// focus (tracks or sidebar folders/playlists/crates). Left/Right switch
-// focus sidebar <-> tracks; SHIFT+Right opens the selected sidebar item.
+// focus (tracks or sidebar folders/playlists/crates). Left = sidebar,
+// Right = enter the highlighted folder / its songs (see below).
 // (Preview seeking is done only with the touch strip, never the arrows.)
 // Clip scene: Left/Right select an effect slot, Up/Down change its effect (fxArrow).
 PUSH2T._arrow = function (key, v) {
@@ -1876,16 +1876,234 @@ PUSH2T._arrow = function (key, v) {
             engine.setValue('[Library]', 'focused_widget', 3);
         }
     }
-    // Left/Right move keyboard FOCUS between the sidebar (folders/playlists/
-    // crates) and the track table, so Up/Down can then walk either list.
-    // SHIFT + Right opens/expands the selected sidebar item (GoToItem).
-    if (key === 'MoveLeft')  { engine.setValue('[Library]', 'MoveFocusBackward', 1); return; }
-    if (key === 'MoveRight') {
-        if (PUSH2T.shiftActive) { engine.setValue('[Library]', 'GoToItem', 1); }
-        else { engine.setValue('[Library]', 'MoveFocusForward', 1); }
-        return;
-    }
+    if (PUSH2T.plArrow(key)) { return; }
+    if (PUSH2T.navArrow(key)) { return; }
     engine.setValue('[Library]', key, 1);
+};
+
+// ──── LIBRARY NAV (left column of the Browse page) ────────────────────────────
+// Mixxx's sidebar can't be reordered or have sections hidden, so on the Pi the
+// screen app (screen/playlist_page.py) paints its own nav over it - Tracks,
+// Playlists, Auto DJ, Computer, Recordings, History, Analyze (no Crates) - and
+// this script steers Mixxx's real sidebar to the same entry behind it.
+// NAV_REAL = each nav entry's row in Mixxx's collapsed sidebar (Tracks 0,
+// Auto DJ 1, Playlists 2, Crates 3, Computer 4, Recordings 5, History 6,
+// Analyze 7); keep the order in sync with NAV_NAMES in playlist_page.py.
+//   Left (songs)   -> focus the nav;  Up/Down/browse encoder move in it
+//   Right          -> Playlists: the playlist list (PUSH2T.pl); Computer /
+//                     History: Mixxx's real folder tree opens (nav.tree) and
+//                     the arrows walk it natively - Right opens a folder, Left
+//                     goes up / collapses; reaching the top level again
+//                     collapses it and the painted nav comes back; others:
+//                     focus their songs
+// Focus is set directly (focused_widget 2 = sidebar, 3 = tracks):
+// MoveFocusBackward/Forward follow the skin's tab order, which in Pusher160
+// never reaches the sidebar. The screen app reports with CC 125 on channel 16
+// whether the real highlight is on a top-level row (1) or deeper (2), from the
+// capture; [Skin],pusher_nav = cursor + 1 for it to draw (100 = tree open,
+// show Mixxx's sidebar as is).
+PUSH2T.NAV_REAL = [0, 2, 1, 4, 5, 6, 7];
+PUSH2T.NAV_PLAYLISTS = 2;
+PUSH2T.NAV_TREE = { 4: true, 6: true };   // rows Right opens as a real tree
+PUSH2T.nav = { cursor: 0, real: 0, synced: false, tree: false, last: '' };
+
+PUSH2T.navPublish = function () {
+    var nav = PUSH2T.nav;
+    engine.setValue('[Skin]', 'pusher_nav', nav.tree ? 100 : nav.cursor + 1);
+};
+
+PUSH2T.navSteps = function (target) {
+    var nav = PUSH2T.nav, diff = target - nav.real;
+    var key = diff > 0 ? 'MoveDown' : 'MoveUp';
+    for (var i = 0; i < Math.abs(diff); i++) { engine.setValue('[Library]', key, 1); }
+    nav.real = target;
+};
+
+PUSH2T.navGo = function (i) {
+    var nav = PUSH2T.nav;
+    nav.cursor = Math.max(0, Math.min(PUSH2T.NAV_REAL.length - 1, i));
+    PUSH2T.navSteps(PUSH2T.NAV_REAL[nav.cursor]);
+    PUSH2T.navPublish();
+    PUSH2T.previewDirty = true;
+};
+
+// Focus the sidebar. The first time, put Mixxx's sidebar in a known state:
+// collapse whatever branch the highlight is in, then up to the top row.
+PUSH2T.navFocus = function () {
+    var nav = PUSH2T.nav, lib = '[Library]', i;
+    engine.setValue(lib, 'focused_widget', 2);
+    if (nav.synced) { return; }
+    for (i = 0; i < 8; i++) { engine.setValue(lib, 'MoveLeft', 1); }
+    for (i = 0; i < 40; i++) { engine.setValue(lib, 'MoveUp', 1); }
+    nav.real = 0;
+    nav.tree = false;
+    nav.synced = true;
+    PUSH2T.navGo(nav.cursor);
+};
+
+// CC 123 ch 16 from the screen app: the capture shows Mixxx's Playlists page
+// while the painted nav is on another entry - the real sidebar drifted (e.g. a
+// key landed on it unseen). Re-home it and step to the nav's entry again.
+PUSH2T.navResync = function () {
+    var nav = PUSH2T.nav, pl = PUSH2T.pl, lib = '[Library]';
+    if (nav.tree || pl.busy || pl.open || PUSH2T._analyze) { return; }
+    var focus = engine.getValue(lib, 'focused_widget');
+    print('[PUSH2T] nav resync');
+    nav.synced = false;
+    PUSH2T.navFocus();
+    if (focus === 3) { engine.setValue(lib, 'focused_widget', 3); }
+};
+
+// Arrow presses for the nav; true = handled.
+PUSH2T.navArrow = function (key) {
+    var nav = PUSH2T.nav, lib = '[Library]';
+    var focus = engine.getValue(lib, 'focused_widget');
+    if (focus !== 2) {
+        if (key === 'MoveLeft') { PUSH2T.navFocus(); return true; }
+        if (key === 'MoveRight') { engine.setValue(lib, 'focused_widget', 3); return true; }
+        return false;   // Up/Down move in the songs
+    }
+    if (nav.tree) {   // Mixxx's own tree (Computer / History): native keys
+        nav.last = key;
+        if (key === 'MoveRight') {
+            engine.setValue(lib, 'GoToItem', 1);   // leaf -> its songs, folder -> expand
+            engine.beginTimer(60, function () {
+                if (engine.getValue(lib, 'focused_widget') === 2) { engine.setValue(lib, 'MoveDown', 1); }
+            }, true);
+        } else {
+            engine.setValue(lib, key, 1);   // MoveLeft = up a level / collapse
+        }
+        return true;
+    }
+    if (key === 'MoveUp' || key === 'MoveDown') { PUSH2T.navGo(nav.cursor + (key === 'MoveUp' ? -1 : 1)); return true; }
+    if (key === 'MoveRight') {
+        var real = PUSH2T.NAV_REAL[nav.cursor];
+        if (PUSH2T.NAV_TREE[real]) {
+            nav.tree = true;
+            nav.last = 'MoveRight';
+            PUSH2T.navPublish();
+            engine.setValue(lib, 'GoToItem', 1);
+            engine.beginTimer(60, function () {
+                if (engine.getValue(lib, 'focused_widget') === 2) { engine.setValue(lib, 'MoveDown', 1); }
+                else { nav.tree = false; PUSH2T.navPublish(); }   // nothing to open: its songs got focus
+            }, true);
+        } else {
+            engine.setValue(lib, 'focused_widget', 3);
+        }
+        return true;
+    }
+    return true;   // Left on the nav: nothing further left
+};
+
+// CC 125 ch 16 from the screen app: 1 = the real highlight is on a top-level
+// row, 2 = deeper. With the tree open, arriving back on the top level means
+// Up/Left climbed out onto the open root: collapse it and hand back to the
+// painted nav. Down past the tree's last row lands on the next root instead:
+// step back up into the tree.
+PUSH2T.navDepth = function (c, t, v) {
+    var nav = PUSH2T.nav, lib = '[Library]';
+    if (!nav.tree || v !== 1 || engine.getValue(lib, 'focused_widget') !== 2) { return; }
+    if (nav.last === 'MoveDown') { engine.setValue(lib, 'MoveUp', 1); return; }
+    if (nav.last === 'MoveUp' || nav.last === 'MoveLeft') {
+        engine.setValue(lib, 'MoveLeft', 1);   // collapse the root
+        nav.tree = false;
+        nav.real = PUSH2T.NAV_REAL[nav.cursor];
+        nav.last = '';
+        PUSH2T.navPublish();
+    }
+};
+
+// ──── PLAYLISTS AS A LIST ─────────────────────────────────────────────────────
+// With the sidebar on the Playlists root, Mixxx's right pane shows a help text;
+// the Pi screen app (screen/playlist_page.py) draws the playlist names over it
+// and tells this script so via CC 126 on channel 16 (value = number of
+// playlists, 0 = that page isn't showing). Then:
+//   Right        -> list mode: a cursor on the list (Up/Down/browse encoder move it)
+//   Right again  -> open the playlist under the cursor: its songs, focus on them
+//   Left (songs) -> back to the list, cursor where it was
+//   Left (list)  -> back to the sidebar
+// Opening has to select the playlist in the sidebar tree (Mixxx has no other
+// way), so the screen app keeps painting the collapsed sidebar while one is
+// open, and Back collapses the tree again. [Skin],pusher_playlist tells the
+// screen app (through bridge-script.js): 0 off, 1..127 = cursor + 1 in list
+// mode, 128 + cursor = that playlist open.
+PUSH2T.pl = { count: 0, cursor: -1, open: false, busy: false, analysing: '', analyseTimer: 0 };
+PUSH2T.PL_STEP_MS = 40;
+
+PUSH2T.plPublish = function () {
+    var pl = PUSH2T.pl;
+    engine.setValue('[Skin]', 'pusher_playlist', pl.open ? 128 + pl.cursor : pl.cursor + 1);
+};
+
+PUSH2T.plPage = function (c, t, v) {   // CC 126 ch 16 from the screen app
+    var pl = PUSH2T.pl;
+    pl.count = v;
+    if (v === 0 && pl.cursor >= 0 && !pl.open && !pl.busy) {   // page gone under us
+        pl.cursor = -1;
+        PUSH2T.plPublish();
+    }
+};
+
+// Handles an arrow press if it belongs to the playlist list; true = handled.
+PUSH2T.plArrow = function (key) {
+    var pl = PUSH2T.pl, lib = '[Library]';
+    if (pl.busy) { return true; }
+    if (pl.open) {
+        if (key === 'MoveLeft' && engine.getValue(lib, 'focused_widget') !== 2) { PUSH2T.plBack(); return true; }
+        return false;   // Up/Down/Right act on the songs as usual
+    }
+    if (pl.cursor >= 0) {
+        if (key === 'MoveUp' || key === 'MoveDown') { PUSH2T.plMove(key === 'MoveUp' ? -1 : 1); }
+        else if (key === 'MoveLeft') { pl.cursor = -1; PUSH2T.plPublish(); }
+        else if (key === 'MoveRight') { PUSH2T.plOpen(); }
+        return true;
+    }
+    if (key === 'MoveRight' && pl.count > 0 && !PUSH2T.nav.tree
+        && PUSH2T.NAV_REAL[PUSH2T.nav.cursor] === PUSH2T.NAV_PLAYLISTS
+        && engine.getValue(lib, 'focused_widget') === 2) {
+        pl.cursor = 0;
+        PUSH2T.plPublish();
+        return true;
+    }
+    return false;
+};
+
+PUSH2T.plMove = function (delta) {
+    var pl = PUSH2T.pl;
+    pl.cursor = Math.max(0, Math.min(pl.count - 1, pl.cursor + delta));
+    PUSH2T.plPublish();
+};
+
+// Expand Playlists, step down onto the cursor's playlist, focus its songs.
+PUSH2T.plOpen = function (then) {
+    var pl = PUSH2T.pl, lib = '[Library]';
+    pl.open = true;
+    pl.busy = true;
+    PUSH2T.plPublish();
+    engine.setValue(lib, 'focused_widget', 2);
+    engine.setValue(lib, 'GoToItem', 1);
+    for (var i = 0; i <= pl.cursor; i++) { engine.setValue(lib, 'MoveDown', 1); }
+    engine.beginTimer(PUSH2T.PL_STEP_MS * (pl.cursor + 3), function () {
+        engine.setValue(lib, 'focused_widget', 3);
+        pl.busy = false;
+        PUSH2T.previewDirty = true;
+        if (then) { then(); }
+    }, true);
+};
+
+// Back to the list: sidebar onto the Playlists root (Left = parent) and
+// collapse it (Left again), so the tree never stays open.
+PUSH2T.plBack = function () {
+    var pl = PUSH2T.pl, lib = '[Library]';
+    pl.busy = true;
+    engine.setValue(lib, 'focused_widget', 2);
+    engine.setValue(lib, 'MoveLeft', 1);
+    engine.setValue(lib, 'MoveLeft', 1);
+    engine.beginTimer(PUSH2T.PL_STEP_MS * 3, function () {
+        pl.open = false;
+        pl.busy = false;
+        PUSH2T.plPublish();
+    }, true);
 };
 PUSH2T.arrowUp    = function (c, t, v) { PUSH2T._arrow('MoveUp', v); };
 PUSH2T.arrowDown  = function (c, t, v) { PUSH2T._arrow('MoveDown', v); };
@@ -1916,6 +2134,15 @@ PUSH2T.browseEncoder = function (c, t, v) {
     print('[PUSH2T] browse encoder ' + amount + ' scene=' + PUSH2T.scene);
     if (!PUSH2T.inLibraryMode()) return;      // library browsing only in the Browse scene
     PUSH2T.previewDirty = true;
+    if (PUSH2T.pl.cursor >= 0 && !PUSH2T.pl.open) {   // playlist list: move its cursor
+        if (!PUSH2T.pl.busy) { PUSH2T.plMove(amount); }
+        return;
+    }
+    if (engine.getValue('[Library]', 'focused_widget') === 2 && !PUSH2T.nav.tree) {   // painted nav
+        if (!PUSH2T.pl.busy) { PUSH2T.navGo(PUSH2T.nav.cursor + amount); }
+        return;
+    }
+    if (engine.getValue('[Library]', 'focused_widget') === 2) { PUSH2T.nav.last = amount > 0 ? 'MoveDown' : 'MoveUp'; }
 
     if (PUSH2T.shiftActive) {
         var steps = Math.min(Math.abs(amount), PUSH2T.SHIFT_NAV_MAX_STEPS);
@@ -2091,7 +2318,7 @@ PUSH2T._analyze = null;          // { timer, last, count } while running
 
 PUSH2T._analyzeStop = function (why) {
     if (!PUSH2T._analyze) { return; }
-    engine.stopTimer(PUSH2T._analyze.timer);
+    if (PUSH2T._analyze.timer) { engine.stopTimer(PUSH2T._analyze.timer); }
     print('[PUSH2T] batch analyze stopped (' + why + ') after ' + PUSH2T._analyze.count + ' tracks');
     PUSH2T._analyze = null;
     engine.setValue('[Skin]', 'pusher_analyze', 0);
@@ -2103,6 +2330,8 @@ PUSH2T._analyzeStep = function () {
     var a = PUSH2T._analyze;
     if (!a) { return; }
     if (!PUSH2T.inLibraryMode()) { PUSH2T._analyzeStop('left Browse'); return; }
+    // its MoveDown must only ever walk the songs, never the sidebar
+    if (engine.getValue('[Library]', 'focused_widget') !== 3) { PUSH2T._analyzeStop('focus moved'); return; }
     var pv = '[PreviewDeck1]';
     // identify what's loaded now: same length as last time = list didn't move
     var id = engine.getValue(pv, 'track_samples') + '/' + engine.getValue(pv, 'duration');
@@ -2119,9 +2348,69 @@ PUSH2T._analyzeStep = function () {
 PUSH2T.convertBtn = function (c, t, v) {
     if (v <= 0 || PUSH2T.colorMode || !PUSH2T.inLibraryMode()) { return; }
     if (PUSH2T._analyze) { PUSH2T._analyzeStop('cancelled'); return; }
+    if (PUSH2T.pl.busy) { return; }
+    // a playlist (cursor on the list, or open): Mixxx analyses it in the background
+    if (PUSH2T.pl.cursor >= 0) { PUSH2T.plAnalyse(); return; }
+    PUSH2T._analyzeStart();
+};
+
+// ─── CONVERT ON A PLAYLIST: background analysis ──────────────────────────────
+// Mixxx's playlist right-click menu has "Analyse entire Playlist", which queues
+// the playlist in its background analyser (the same one as the Analyze view):
+// nothing loads, browsing goes on. Controllers can't reach that menu, so this
+// selects the playlist in the sidebar and sets [Skin],pusher_playlist to
+// 256 + cursor; the Pi screen app (screen/playlist_analysis.py) right-clicks the
+// highlighted row and picks the entry, holding the Push image still meanwhile,
+// answers with CC 124 on channel 16 (1 queued, 2 failed), and draws the
+// progress bar at the bottom of the Browse page. Then the sidebar goes back.
+PUSH2T.PL_ANALYSE_TIMEOUT_MS = 6000;
+
+PUSH2T.plAnalyse = function () {
+    var pl = PUSH2T.pl, lib = '[Library]';
+    pl.busy = true;
+    pl.analysing = pl.open ? 'open' : 'list';
+    engine.setValue(lib, 'focused_widget', 2);
+    if (!pl.open) {   // expand Playlists and step down onto the cursor's playlist
+        engine.setValue(lib, 'GoToItem', 1);
+        for (var i = 0; i <= pl.cursor; i++) { engine.setValue(lib, 'MoveDown', 1); }
+    }
+    engine.setValue('[Skin]', 'pusher_playlist', 256 + pl.cursor);
+    pl.analyseTimer = engine.beginTimer(PUSH2T.PL_ANALYSE_TIMEOUT_MS, function () {
+        pl.analyseTimer = 0;
+        PUSH2T.plAnalysed(0, 0, 0);   // no answer from the screen app
+    }, true);
+    print('[PUSH2T] analyse playlist ' + pl.cursor);
+};
+
+PUSH2T.plAnalysed = function (c, t, v) {   // CC 124 ch 16 from the screen app
+    var pl = PUSH2T.pl, lib = '[Library]';
+    if (!pl.analysing) { return; }
+    if (pl.analyseTimer) { engine.stopTimer(pl.analyseTimer); pl.analyseTimer = 0; }
+    var was = pl.analysing;
+    pl.analysing = '';
+    print('[PUSH2T] analyse playlist ' + (v === 1 ? 'queued' : v === 2 ? 'failed' : 'timed out'));
+    if (was === 'open') {   // the playlist stays open: focus back on its songs
+        engine.setValue(lib, 'focused_widget', 3);
+        pl.busy = false;
+        PUSH2T.plPublish();
+        return;
+    }
+    // back to the list: Playlists root (Left = parent), collapsed (Left again)
+    engine.setValue(lib, 'focused_widget', 2);
+    engine.setValue(lib, 'MoveLeft', 1);
+    engine.setValue(lib, 'MoveLeft', 1);
+    engine.beginTimer(PUSH2T.PL_STEP_MS * 3, function () {
+        pl.busy = false;
+        PUSH2T.plPublish();
+        PUSH2T.previewDirty = true;
+    }, true);
+};
+
+PUSH2T._analyzeStart = function () {
     var pv = '[PreviewDeck1]';
     engine.setValue(pv, 'play', 0);
-    // focus the track list and jump to its first row, then load it
+    // focus the track list (with the sidebar on a playlist it already shows
+    // that playlist's songs), jump to its first row, then load it
     engine.setValue('[Library]', 'focused_widget', 3);
     engine.setValue('[Library]', 'MoveVertical', -100000);
     engine.setValue(pv, 'LoadSelectedTrack', 1);

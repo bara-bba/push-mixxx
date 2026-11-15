@@ -645,6 +645,34 @@
                 <status>0x80</status><midino>0x04</midino>
                 <options><script-binding/></options></control>
 
+            <!-- Sent by the Pi screen app (screen/playlist_page.py): number of
+                 playlists while Mixxx shows the Playlists page, 0 otherwise -->
+            <control><group></group><key>PUSH2T.plPage</key>
+                <description>Playlists page shown (CC 126, channel 16)</description>
+                <status>0xBF</status><midino>0x7E</midino>
+                <options><script-binding/></options></control>
+
+            <!-- Sent by the Pi screen app (screen/playlist_page.py): Mixxx's sidebar
+                 highlight is on a top-level row (1) or deeper (2) -->
+            <control><group></group><key>PUSH2T.navDepth</key>
+                <description>Sidebar highlight depth (CC 125, channel 16)</description>
+                <status>0xBF</status><midino>0x7D</midino>
+                <options><script-binding/></options></control>
+
+            <!-- Sent by the Pi screen app (screen/playlist_analysis.py): the playlist
+                 Convert asked for is queued for analysis (1) or couldn't be (2) -->
+            <control><group></group><key>PUSH2T.plAnalysed</key>
+                <description>Playlist analysis queued (CC 124, channel 16)</description>
+                <status>0xBF</status><midino>0x7C</midino>
+                <options><script-binding/></options></control>
+
+            <!-- Sent by the Pi screen app: Mixxx's sidebar isn't on the entry the
+                 painted nav shows - put it back -->
+            <control><group></group><key>PUSH2T.navResync</key>
+                <description>Library nav resync (CC 123, channel 16)</description>
+                <status>0xBF</status><midino>0x7B</midino>
+                <options><script-binding/></options></control>
+
             <!-- Sent by screen/push2_midi_relay.py when the Push reconnects (Pi) -->
             <control><group></group><key>PUSH2T.redraw</key>
                 <description>Push reconnected – repaint all LEDs (CC 127, channel 16)</description>

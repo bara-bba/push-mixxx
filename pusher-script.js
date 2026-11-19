@@ -940,11 +940,18 @@ PUSH2T.drawTopRow = function () {
     if (!PUSH2T._analyze) { PUSH2T.setCC(0x23, PUSH2T.inLibraryMode() ? 64 : 0); }
     if (PUSH2T.scene === 'clip') {
         PUSH2T.drawMixButtons();
+    } else if (PUSH2T.onAutoDJPage()) {
+        // Auto DJ page: on/off, fade now, skip next, shuffle, add random
+        PUSH2T.setCC(104, engine.getValue('[AutoDJ]', 'enabled') ? PUSH2T.C.green : PUSH2T.C.white);
+        [105, 106, 107, 108].forEach(function (cc) { PUSH2T.setCC(cc, PUSH2T.C.white); });
+        PUSH2T.setCC(109, 0);
+        PUSH2T.setCC(103, 0);
+        PUSH2T.setCC(102, PUSH2T.previewPlaying() ? PUSH2T.C.green : PUSH2T.C.red);
     } else if (PUSH2T.inLibraryMode()) {
         [104, 105, 106, 107, 108, 109].forEach(function (cc) {
             PUSH2T.setCC(cc, PUSH2T.C.white);
         });
-        PUSH2T.setCC(103, 0);
+        PUSH2T.setCC(103, PUSH2T.C.paleWhite);   // add to Auto DJ
         PUSH2T.setCC(102, PUSH2T.previewPlaying() ? PUSH2T.C.green : PUSH2T.C.red);
     } else {
         [102, 103, 104, 106, 107, 108].forEach(function (cc) { PUSH2T.setCC(cc, 0); });
@@ -973,6 +980,10 @@ PUSH2T.drawStaticButtons = function () {
     PUSH2T.safeConnect('[PreviewDeck1]', 'track_loaded', function () { PUSH2T.drawStripCursor(); });
     PUSH2T.safeConnect('[Channel1]', 'rate', function () { PUSH2T.drawStrip(); });
     PUSH2T.safeConnect('[Channel2]', 'rate', function () { PUSH2T.drawStrip(); });
+
+    PUSH2T.safeConnect('[AutoDJ]', 'enabled', function () {
+        if (PUSH2T.inLibraryMode()) { PUSH2T.drawTopRow(); }
+    });
 
     // ── Preview play state -> CC102 LED (library mode only) ──
     PUSH2T.safeConnect('[PreviewDeck1]', 'play', function (v) {
@@ -1725,6 +1736,7 @@ PUSH2T.setScene = function (name) {
 };
 
 PUSH2T._sortBy = function (cc) {
+    if (PUSH2T.onAutoDJPage()) { PUSH2T.autoDJButton(cc); return; }
     engine.setValue('[Library]', 'sort_column_toggle', PUSH2T.SORT_COLUMNS[cc]);
     print('[PUSH2T] library sort by ' + PUSH2T.SORT_NAMES[cc]);
 };
@@ -1765,7 +1777,16 @@ PUSH2T.previewSeek = function (dir) {
 PUSH2T.top102 = function (c, t, v) {
     if (v > 0 && PUSH2T.inLibraryMode()) { PUSH2T.previewToggle(); }
 };
-PUSH2T.top103 = function () {};       // free (kept bound so color mode can catch it)
+// 103 in Browse: add the selected song(s) to the Auto DJ queue (SHIFT: on top)
+PUSH2T.top103 = function (c, t, v) {
+    if (v <= 0 || !PUSH2T.inLibraryMode() || PUSH2T.onAutoDJPage()) { return; }
+    if (engine.getValue('[Library]', 'focused_widget') !== 3) { return; }   // songs only
+    var key = PUSH2T.shiftActive ? 'AutoDjAddTop' : 'AutoDjAddBottom';
+    engine.setValue('[Library]', key, 1);
+    print('[PUSH2T] ' + key);
+    PUSH2T.setCC(103, PUSH2T.C.green);
+    engine.beginTimer(300, function () { PUSH2T.drawTopRow(); }, true);
+};
 
 [104, 106, 107, 108].forEach(function (cc) {
     PUSH2T['top' + cc] = function (c, t, v) {
@@ -1831,6 +1852,8 @@ PUSH2T.shiftBtn = function (c, t, v) {
 // Held while pressing Loop In or Loop Out -> disables (releases) the loop.
 
 PUSH2T.deleteBtn = function (c, t, v) {
+    // Browse: deletes on the Recordings / Auto DJ pages instead of being a modifier
+    if (v > 0 && PUSH2T.inLibraryMode() && !PUSH2T.colorMode && PUSH2T.libraryDelete()) { return; }
     if (v > 0) {
         PUSH2T.deleteActive = true;
         PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].on);   // held
@@ -1841,17 +1864,34 @@ PUSH2T.deleteBtn = function (c, t, v) {
 };
 
 // ──── RECORD (CC86) ──────────────────────────────────────────────────────────
-// Toggles Mixxx mix recording. LED: static white when idle, static red
-// while recording — driven by the [Recording] status connection below.
+// Hold REC_HOLD_MS to start or stop Mixxx's mix recording (a tap does nothing,
+// so it can't be hit by accident; the Pi screen app shows the hold countdown).
+// LED: static white when idle, static red while recording — driven by the
+// [Recording] status connection below.
+PUSH2T.REC_HOLD_MS = 800;
+PUSH2T._recHold = 0;
 
 PUSH2T.recordToggle = function (c, t, v) {
-    if (v > 0) {
+    if (PUSH2T._recHold) { engine.stopTimer(PUSH2T._recHold); PUSH2T._recHold = 0; }
+    if (v <= 0) { return; }
+    PUSH2T._recHold = engine.beginTimer(PUSH2T.REC_HOLD_MS, function () {
+        PUSH2T._recHold = 0;
+        var was = engine.getValue('[Recording]', 'status');
+        print('[PUSH2T] recording ' + (was ? 'stop' : 'start') + ' (status ' + was + ')');
+        if (was === 1) {
+            // armed but no audio has arrived yet: Mixxx's toggle only stops a
+            // recording that started (it would re-arm), so cancel it directly
+            engine.setValue('[Recording]', 'status', 0);
+            return;
+        }
         engine.setValue('[Recording]', 'toggle_recording', 1);
-    }
+        engine.setValue('[Recording]', 'toggle_recording', 0);
+    }, true);
 };
 
 PUSH2T.connectRecording = function () {
     PUSH2T.safeConnect('[Recording]', 'status', function (v) {
+        print('[PUSH2T] recording status ' + v);
         // Plain static color: bright red while recording, white when idle.
         PUSH2T.setCC(PUSH2T.CC_BTN.record,
             v ? PUSH2T.slots['C86'].on : PUSH2T.slots['C86'].off);
@@ -1877,6 +1917,7 @@ PUSH2T._arrow = function (key, v) {
         }
     }
     if (PUSH2T.plArrow(key)) { return; }
+    if (PUSH2T.recArrow(key)) { return; }
     if (PUSH2T.navArrow(key)) { return; }
     engine.setValue('[Library]', key, 1);
 };
@@ -1925,6 +1966,7 @@ PUSH2T.navGo = function (i) {
     PUSH2T.navSteps(PUSH2T.NAV_REAL[nav.cursor]);
     PUSH2T.navPublish();
     PUSH2T.previewDirty = true;
+    PUSH2T.drawTopRow();   // the Auto DJ page has its own top buttons
 };
 
 // Focus the sidebar. The first time, put Mixxx's sidebar in a known state:
@@ -2105,6 +2147,133 @@ PUSH2T.plBack = function () {
         PUSH2T.plPublish();
     }, true);
 };
+// ──── AUTO DJ PAGE ────────────────────────────────────────────────────────────
+// With the nav on Auto DJ the top buttons above the table drive Auto DJ instead
+// of sorting (sorting the queue is no use); the Pi screen app
+// (screen/library_pages.py) paints their labels and the queue summary. DELETE
+// with the queue focused removes the selected song (the screen app presses
+// Mixxx's Delete key: there's no controller control for it). Elsewhere in
+// Browse, 103 adds the selected songs to the queue (SHIFT: on top).
+PUSH2T.NAV_AUTODJ = 1;      // real sidebar rows
+PUSH2T.NAV_RECORDINGS = 5;
+PUSH2T.AUTODJ_BUTTONS = { 104: 'enabled', 105: 'fade_now', 106: 'skip_next', 107: 'shuffle', 108: 'add_random_track' };
+
+PUSH2T.navOn = function (real) {
+    var nav = PUSH2T.nav;
+    return PUSH2T.inLibraryMode() && !nav.tree && PUSH2T.NAV_REAL[nav.cursor] === real;
+};
+PUSH2T.onAutoDJPage = function () { return PUSH2T.navOn(PUSH2T.NAV_AUTODJ); };
+
+PUSH2T.autoDJButton = function (cc) {
+    var key = PUSH2T.AUTODJ_BUTTONS[cc];
+    if (!key) { return; }
+    if (key === 'enabled') {
+        engine.setValue('[AutoDJ]', 'enabled', engine.getValue('[AutoDJ]', 'enabled') ? 0 : 1);
+    } else {
+        engine.setValue('[AutoDJ]', key, 1);
+        engine.setValue('[AutoDJ]', key, 0);
+    }
+    print('[PUSH2T] auto dj ' + key);
+};
+
+// One-shot requests to the Pi screen app ([Skin],pusher_req = kind * 128 + seq)
+PUSH2T.REQ_DELETE_KEY = 1;
+PUSH2T._reqSeq = 0;
+PUSH2T.request = function (kind) {
+    PUSH2T._reqSeq = (PUSH2T._reqSeq + 1) % 128;
+    engine.setValue('[Skin]', 'pusher_req', kind * 128 + PUSH2T._reqSeq);
+};
+
+// ──── RECORDINGS PAGE ─────────────────────────────────────────────────────────
+// With the nav on Recordings the Pi screen app paints the recording in progress
+// on top and the recordings folder below (screen/library_pages.py), reporting
+// how many files there are with CC 122 on channel 16. Right = cursor on the
+// list (Up/Down/browse encoder), Left = back to the nav; DELETE arms the file
+// under the cursor, DELETE again within REC_ARM_MS deletes it (the screen app
+// does). [Skin],pusher_rec: 0 off, cursor + 1, 1000 + cursor = armed,
+// 2000 + cursor = delete it.
+PUSH2T.rec = { count: 0, cursor: -1, armed: false, timer: 0 };
+PUSH2T.REC_ARM_MS = 3000;
+PUSH2T.REC_ARMED = 1000;
+PUSH2T.REC_DELETE = 2000;
+
+PUSH2T.recPublish = function (value) {
+    var r = PUSH2T.rec;
+    if (value === undefined) {
+        value = r.cursor < 0 ? 0 : (r.armed ? PUSH2T.REC_ARMED + r.cursor : r.cursor + 1);
+    }
+    engine.setValue('[Skin]', 'pusher_rec', value);
+};
+
+PUSH2T.recPage = function (c, t, v) {   // CC 122 ch 16 from the screen app
+    var r = PUSH2T.rec;
+    r.count = v;
+    if (r.cursor >= v) {
+        r.cursor = v - 1;
+        PUSH2T.recDisarm();
+        PUSH2T.recPublish();
+    }
+};
+
+PUSH2T.recDisarm = function () {
+    var r = PUSH2T.rec;
+    if (r.timer) { engine.stopTimer(r.timer); r.timer = 0; }
+    r.armed = false;
+};
+
+PUSH2T.recArrow = function (key) {
+    var r = PUSH2T.rec;
+    if (r.cursor >= 0) {
+        if (key === 'MoveUp' || key === 'MoveDown') { PUSH2T.recMove(key === 'MoveUp' ? -1 : 1); return true; }
+        PUSH2T.recDisarm();
+        if (key === 'MoveLeft') { r.cursor = -1; }
+        PUSH2T.recPublish();
+        return true;
+    }
+    if (key === 'MoveRight' && PUSH2T.navOn(PUSH2T.NAV_RECORDINGS) && r.count > 0
+        && engine.getValue('[Library]', 'focused_widget') === 2) {
+        r.cursor = 0;
+        PUSH2T.recPublish();
+        return true;
+    }
+    return false;
+};
+
+PUSH2T.recMove = function (delta) {
+    var r = PUSH2T.rec;
+    PUSH2T.recDisarm();
+    r.cursor = Math.max(0, Math.min(r.count - 1, r.cursor + delta));
+    PUSH2T.recPublish();
+};
+
+// DELETE pressed in Browse; true = handled here
+PUSH2T.libraryDelete = function () {
+    var r = PUSH2T.rec;
+    if (r.cursor >= 0 && PUSH2T.navOn(PUSH2T.NAV_RECORDINGS)) {
+        if (!r.armed) {
+            r.armed = true;
+            r.timer = engine.beginTimer(PUSH2T.REC_ARM_MS, function () {
+                r.timer = 0;
+                r.armed = false;
+                PUSH2T.recPublish();
+            }, true);
+            PUSH2T.recPublish();
+        } else {
+            PUSH2T.recDisarm();
+            PUSH2T.recPublish(PUSH2T.REC_DELETE + r.cursor);
+            print('[PUSH2T] delete recording ' + r.cursor);
+            engine.beginTimer(500, function () { PUSH2T.recPublish(); }, true);
+        }
+        return true;
+    }
+    if (PUSH2T.onAutoDJPage() && engine.getValue('[Library]', 'focused_widget') === 3) {
+        PUSH2T.request(PUSH2T.REQ_DELETE_KEY);   // remove the selected song from the queue
+        print('[PUSH2T] auto dj: remove selected');
+        return true;
+    }
+    return false;
+};
+
 PUSH2T.arrowUp    = function (c, t, v) { PUSH2T._arrow('MoveUp', v); };
 PUSH2T.arrowDown  = function (c, t, v) { PUSH2T._arrow('MoveDown', v); };
 PUSH2T.arrowLeft  = function (c, t, v) { PUSH2T._arrow('MoveLeft', v); };
@@ -2138,6 +2307,7 @@ PUSH2T.browseEncoder = function (c, t, v) {
         if (!PUSH2T.pl.busy) { PUSH2T.plMove(amount); }
         return;
     }
+    if (PUSH2T.rec.cursor >= 0) { PUSH2T.recMove(amount); return; }   // recordings list
     if (engine.getValue('[Library]', 'focused_widget') === 2 && !PUSH2T.nav.tree) {   // painted nav
         if (!PUSH2T.pl.busy) { PUSH2T.navGo(PUSH2T.nav.cursor + amount); }
         return;

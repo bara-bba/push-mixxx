@@ -30,9 +30,10 @@ import mido
 import psutil
 from PIL import Image, ImageDraw, ImageFont
 
-from mixxx_capture import MixxxSkinCapture, close_mixxx_popups, focus_mixxx
+from mixxx_capture import MixxxSkinCapture, _x11_focus_main, close_mixxx_popups, focus_mixxx
 import playlist_analysis
 from playlist_analysis import AnalysisProgress
+from library_pages import AutoDJPage, RecordingsPage
 from playlist_page import NAV_NAMES, NAV_TREE_OPEN, PlaylistPage
 from pi_stats import BODY_BOLD_FONTS, DISPLAY_FONTS, EDGE, INK, LIME, LINE, DIM, PiStats, _font
 
@@ -69,6 +70,10 @@ PLAYLISTS_CC = bytes([0xBF, 0x7E])  # + count: pusher-script.js PUSH2T.plPage
 DEPTH_CC = bytes([0xBF, 0x7D])  # + 1 top-level / 2 deeper: PUSH2T.navDepth
 ANALYSED_CC = bytes([0xBF, 0x7C])  # + 1 queued / 2 failed: PUSH2T.plAnalysed
 RESYNC_CC = bytes([0xBF, 0x7B, 0x01])  # PUSH2T.navResync
+RECORDINGS_CC = bytes([0xBF, 0x7A])  # + number of recordings: PUSH2T.recPage
+REQ_DELETE_KEY = 1  # [Skin],pusher_req kind: press Delete in Mixxx (remove from the Auto DJ queue)
+CC_RECORD = 86  # push-mixxx starts/stops recording on a REC_HOLD_SECONDS hold
+REC_HOLD_SECONDS = 0.8  # = pusher-script.js PUSH2T.REC_HOLD_MS
 PL_ANALYSE = 256  # pusher_playlist >= this: Convert asked to analyse playlist (value - 256)
 ANALYSE_SETTLE_SECONDS = 0.4  # the script's sidebar steps, before the right-click
 FREEZE_AFTER_SECONDS = 0.4  # the Push image stays still this long after a request
@@ -109,6 +114,10 @@ class MixxxState:
         self.dropout_times = []   # monotonic times of dropouts seen by this bridge
         self.playlist = 0         # pusher_playlist: 0 off, 1..127 cursor + 1, 128 + cursor = open, 256 + cursor = analyse it
         self.nav = 0              # pusher_nav: painted nav cursor + 1 (0 = not set yet), 100 = tree open
+        self.rec = 0              # pusher_rec: recordings list (library_pages.py)
+        self.rec_status = 0       # [Recording],status: 0 off, 1 waiting for audio, 2 recording
+        self.autodj = 0           # [AutoDJ],enabled
+        self.req = None           # pusher_req: last one-shot request seen
 
 
 class MixxxMidiBridge:
@@ -147,6 +156,10 @@ class MixxxMidiBridge:
         self._freeze_until = 0.0    # hold the Push image still until then (monotonic)
         self._drift_since = None    # Playlists page shown under another nav entry since
         self._resync_at = 0.0
+        self.recordings = RecordingsPage()
+        self.autodj_page = AutoDJPage(music_drive)
+        self._rec_sent = (None, 0.0)
+        self._rec_pressed_at = None  # REC held since (monotonic), for the countdown
         self._dump_frame = False
         if hasattr(signal, 'SIGUSR1'):
             signal.signal(signal.SIGUSR1, lambda *_: setattr(self, '_dump_frame', True))
@@ -228,6 +241,8 @@ class MixxxMidiBridge:
             self.state.playlist = playlist
             if len(data) >= 5:
                 self.state.nav = data[4]
+            if len(data) >= 11:
+                self._library_state(data)
         elif frame_type == TYPE_AUDIO and len(data) >= 5:
             count, pct = (data[2] << 7) | data[3], data[4]
             st = self.state
@@ -284,6 +299,8 @@ class MixxxMidiBridge:
                 print(f"[popup] DELETE closed {closed} window(s)")
         elif msg.control == CC_SHIFT:
             self._shift = msg.value > 0
+        elif msg.control == CC_RECORD and msg.channel != 15:
+            self._rec_pressed_at = time.monotonic() if msg.value > 0 else None
         elif msg.control == CC_SETUP:
             if self._setup_timer:
                 self._setup_timer.cancel()
@@ -368,6 +385,8 @@ class MixxxMidiBridge:
         frame = self._base_frame()
         if self._setup_pressed_at is not None:
             frame = self._setup_overlay(frame.copy())
+        elif self._rec_pressed_at is not None:
+            frame = self._rec_overlay(frame.copy())
         if self._dump_frame:  # kill -USR1: save exactly what the Push shows
             self._dump_frame = False
             frame.save(FRAME_DUMP)
@@ -425,10 +444,76 @@ class MixxxMidiBridge:
         if shown:
             rows = 7 if self.analysis.showing else 8   # the analysis bar takes the 8th
             frame = self.playlist_page.draw(frame, pl - 1 if 0 < pl < 128 else -1, rows)
+        page = NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)] if 0 < nav != NAV_TREE_OPEN else None
+        self._report_recordings()
+        if page == 'Recordings':
+            frame = self.recordings.draw(frame, self.state.rec, self.state.rec_status)
+        elif page == 'Auto DJ':
+            frame = self.autodj_page.draw(frame, self.state.autodj)
         if nav != NAV_TREE_OPEN:
-            frame = self.playlist_page.draw_nav(frame, max(nav - 1, 0))
+            nav_rows = 4 if self.analysis.showing else 5   # the analysis bar takes the 5th
+            frame = self.playlist_page.draw_nav(frame, max(nav - 1, 0), nav_rows)
         self._check_drift(shown, pl, nav)
         return self.analysis.draw(frame)
+
+    def _library_state(self, data):
+        """Recordings / Auto DJ part of the 0x06 frame (bridge-script.js)."""
+        st = self.state
+        rec = (data[5] << 7) | data[6]
+        if data[7] != st.rec_status:
+            print(f'[recording] status {st.rec_status} -> {data[7]}', flush=True)
+        st.rec_status, st.autodj = data[7], data[8]
+        req = (data[9] << 7) | data[10]
+        if rec != st.rec:
+            st.rec = rec
+            self.recordings.request(rec, st.rec_status)
+        if st.req is None:
+            st.req = req          # whatever was pending before this app started
+        elif req != st.req:
+            st.req = req
+            if req >> 7 == REQ_DELETE_KEY:
+                threading.Thread(target=self._press_delete, daemon=True).start()
+
+    def _press_delete(self):
+        """Remove the selected song from Mixxx's Auto DJ queue: its Delete key,
+        then OK in the "Confirm track removal" box it asks with (DELETE on the
+        Push already was the confirmation). The Push image holds still meanwhile."""
+        self._freeze_until = time.monotonic() + 2.0
+        try:
+            _x11_focus_main()
+            xdo = lambda *a: subprocess.run(['xdotool', *a], capture_output=True, text=True, timeout=2).stdout
+            xdo('key', 'Delete')
+            deadline = time.monotonic() + 1.5
+            wid = ''
+            while not wid and time.monotonic() < deadline:
+                time.sleep(0.05)
+                wid = xdo('search', '--onlyvisible', '--name', '^Confirm track removal$').split()[:1]
+                wid = wid[0] if wid else ''
+            if wid:
+                geo = dict(l.split('=', 1) for l in xdo('getwindowgeometry', '--shell', wid).split() if '=' in l)
+                x, y, w, h = (int(geo[k]) for k in ('X', 'Y', 'WIDTH', 'HEIGHT'))
+                # OK sits left of Cancel at the bottom right (measured on the Pi: 480x113 box)
+                xdo('mousemove', str(x + w - 135), str(y + h - 24), 'click', '1')
+                xdo('mousemove', '959', '0')
+                time.sleep(0.2)
+                if xdo('search', '--onlyvisible', '--name', '^Confirm track removal$').strip():
+                    xdo('key', '--window', wid, 'Escape')   # missed OK: don't leave it blocking Mixxx
+                    print('[autodj] removal box not confirmed, closed it', flush=True)
+                else:
+                    print('[autodj] song removed from the queue', flush=True)
+            _x11_focus_main()
+        finally:
+            self._freeze_until = time.monotonic() + 0.3
+
+    def _report_recordings(self):
+        """Number of recordings to the Push mapping (on change, and every few s)."""
+        count = min(self.recordings.count, 127)
+        last, at = self._rec_sent
+        now = time.monotonic()
+        if count == last and now - at < PLAYLISTS_RESEND_SECONDS:
+            return
+        self._rec_sent = (count, now)
+        self._send_mixxx(RECORDINGS_CC + bytes([count]))
 
     def _frozen(self):
         if self.state.playlist >= PL_ANALYSE:
@@ -510,6 +595,17 @@ class MixxxMidiBridge:
                 os.close(fd)
         except OSError as e:
             print(f'[library] cannot reach the mapping: {e}', flush=True)
+
+    def _rec_overlay(self, img):
+        """Countdown while REC is held (push-mixxx toggles recording at the end)."""
+        held = time.monotonic() - (self._rec_pressed_at or time.monotonic())
+        if held > REC_HOLD_SECONDS + 1.0:
+            return img
+        stopping = self.state.rec_status != 0
+        if held < REC_HOLD_SECONDS:
+            title = 'STOP RECORDING' if stopping else 'START RECORDING'
+            return self._box(img, title, 'keep holding REC', held / REC_HOLD_SECONDS)
+        return self._box(img, 'RECORDING' if stopping else 'RECORDING STOPPED', 'release REC', 1.0)
 
     def _setup_overlay(self, img):
         """Countdown box while SETUP is held (release cancels)."""

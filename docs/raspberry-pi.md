@@ -4,7 +4,7 @@ status: active
 area: dj
 tags: [dj, mixxx, push2, raspberry-pi]
 created: 2026-10-17
-updated: 2026-11-15
+updated: 2026-11-19
 ---
 
 # Headless Raspberry Pi deployment
@@ -58,6 +58,20 @@ Xvfb display), so nothing loads and you keep browsing. A bar at the bottom of
 the Browse page shows how many of its tracks are done (counted from the stored
 waveforms in the drive's library); Mixxx's Analyze view shows the same queue.
 
+On **Auto DJ** the top buttons above the table drive Auto DJ instead of
+sorting: on/off, fade now, skip next, shuffle, add a random song (their labels
+replace the sort labels), and a summary of the queue (songs, total length, the
+next one) replaces Mixxx's control row. DELETE with the queue focused removes
+the selected song. On the other pages the 2nd top button adds the selected
+songs to the queue (SHIFT: to the top).
+
+On **Recordings** the right pane shows the recording in progress (time, size,
+file) or "hold REC to start", the free space, and the recordings folder below
+(newest first: name, date, length, size). Right puts a cursor on the list;
+DELETE marks the file under it, DELETE again within 3 s deletes it (and its
+`.cue`). The file being recorded can't be deleted. Recording starts and stops
+with a 0.8 s hold on REC (the screen counts it down); a tap does nothing.
+
 ![Browse, playlists](screenshots/push-browse-playlists.png)
 
 ### Drawn by the screen app
@@ -81,11 +95,19 @@ Push 2 pads/buttons ──USB MIDI──▶ push2-midi-relay ──VirMIDI 7-1�
 Mixxx (Pusher160 skin on Xvfb :1, 960x160) ──screen capture──▶ push2-screen ──USB bulk──▶ Push 2 display
 Mixxx (bridge.midi.xml) ──VirMIDI 7-0 SysEx: scene, audio dropouts──▶ push2-screen
 Mixxx ──ALSA──▶ Komplete Audio 6 (deck A: out 1-2, deck B: out 3-4, external mixer)
+external mixer REC out ──▶ Komplete Audio 6 in 3-4 (rear) ──▶ Mixxx Record/Broadcast input (REC)
 USB drive ──auto-mount──▶ ~/Music/usb  (music + .mixxx/mixxxdb.sqlite library + Playlists/*.m3u8)
 ```
 
 Services (systemd): `xvfb`, `mixxx`, `push2-screen`, `push2-midi-relay`,
 `usb-library-mount@<dev>`.
+
+Recording takes the external mixer's output through the Komplete Audio 6's
+rear inputs 3-4, set as Mixxx's Record/Broadcast input in
+`~/.mixxx/soundconfig.xml` (and `soundconfig.default.xml`). Mixxx's main mix
+stays enabled (`[Master] enabled 1` in `mixxx.cfg`) although nothing plays it:
+with it disabled Mixxx never starts writing a recording (it waits for audio
+forever, even with a Record/Broadcast input).
 
 ## Push 2 buttons added on the Pi
 
@@ -119,7 +141,24 @@ See [Screens](#screens) for what each one looks like.
 - Decks start with quantize and keylock on; the library only shows the drive's
   own sections (Rekordbox, Serato, Traktor, iTunes... hidden).
 
-## Hardware: Pi 3 limits and the Pi 4 recommendation
+## Hardware: Pi 3 limits and the move to a Pi 5
+
+**Since 2026-11-19 it runs on a Raspberry Pi 5**: the Pi 3's SD card moved over
+unchanged (Raspberry Pi OS trixie already carries the Pi 5 kernel). Notes:
+
+- Ethernet 192.168.42.107; the onboard WiFi (SSID BiFi) has the fixed
+  192.168.42.106 as a backup way in (route metric 600, so Ethernet stays the
+  main route). The Pi 3's USB WiFi adapter is no longer used
+  (`dtoverlay=disable-wifi` is commented out in `config.txt`).
+- The Komplete Audio 6 and the Push sit on different USB controllers (each
+  vertical pair of ports is one controller).
+- ALSA card numbers move: the HDMI audio devices take two, the Push one, so
+  the K6 is `hw:3,0` now (it was `hw:1,0` on the Pi 3), set in
+  `soundconfig.xml` and `soundconfig.default.xml`. If Mixxx starts without the
+  K6 it saves an empty `soundconfig.xml`; restore it from the default file.
+- The supply is not the official 5 A one: it negotiates 3 A, which limits USB
+  to 600 mA in total. Watch the stats page for undervoltage.
+
 
 Developed on a **Raspberry Pi 3 Model B** (1 GB). It runs everything, but the
 audio drops out. Measured with the dropout counter (2026-10-13, ~20 min of

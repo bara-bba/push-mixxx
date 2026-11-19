@@ -37,7 +37,7 @@ REFRESH_SECONDS = 2.0
 DONE_SHOW_SECONDS = 5.0
 STALL_SECONDS = 240.0   # no track finished for this long: stop following it
 
-BAR_Y = 146   # bottom strip of the Browse page, right pane
+BAR_Y = 142   # bottom strip of the Browse page: its last row (table, list, nav), full width
 PANE_X = 282
 
 
@@ -198,18 +198,18 @@ class AnalysisProgress:
             self._finished = None
             return frame
         draw = ImageDraw.Draw(frame)
-        x0, y0, x1, y1 = PANE_X, BAR_Y, 959, 159
+        x0, y0, x1, y1 = 0, BAR_Y, 959, 159
         draw.rectangle([x0, y0, x1, y1], fill=INK)
         draw.line([x0, y0, x1, y0], fill=EDGE)
-        bar_x0, bar_x1 = 760, x1 - 8
+        bar_x0, bar_x1 = 700, x1 - 10
         cw = draw.textlength(count, font=self._f)
-        room = bar_x0 - 12 - cw - 10 - (x0 + 8)
+        room = bar_x0 - 12 - cw - 10 - (x0 + 10)
         if draw.textlength(label, font=self._f_bold) > room:
             while label and draw.textlength(label + '…', font=self._f_bold) > room:
                 label = label[:-1]
             label += '…'
-        draw.text((x0 + 8, y0 + 1), label, font=self._f_bold, fill=LINE)
-        draw.text((bar_x0 - 10 - cw, y0 + 1), count, font=self._f, fill=DIM)
+        draw.text((x0 + 10, y0 + 3), label, font=self._f_bold, fill=LINE)
+        draw.text((bar_x0 - 10 - cw, y0 + 3), count, font=self._f, fill=DIM)
         by0, by1 = y0 + 4, y1 - 3
         draw.rectangle([bar_x0, by0, bar_x1, by1], outline=EDGE)
         fill_x = bar_x0 + 1 + int((bar_x1 - bar_x0 - 2) * frac)

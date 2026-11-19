@@ -43,10 +43,15 @@ PUSH2BRIDGE.TYPE_AUDIO = 0x05;
 // type 0x06 PLAYLIST: hi lo of [Skin],pusher_playlist (pusher-script.js
 // PUSH2T.pl: 0 off, 1..127 list cursor + 1, 128 + cursor = playlist open,
 // 256 + cursor = Convert: analyse the playlist highlighted in the sidebar),
-// then [Skin],pusher_nav (PUSH2T.nav: painted nav cursor + 1, 100 = tree open)
+// then [Skin],pusher_nav (PUSH2T.nav: painted nav cursor + 1, 100 = tree open),
+// then hi lo of [Skin],pusher_rec (PUSH2T.rec: recordings list), [Recording],
+// status, [AutoDJ],enabled, hi lo of [Skin],pusher_req (PUSH2T.req: kind * 128
+// + sequence - a one-shot request to the screen app, e.g. a Delete key press)
 PUSH2BRIDGE.TYPE_PLAYLIST = 0x06;
 PUSH2BRIDGE.playlist = 0;
 PUSH2BRIDGE.nav = 0;
+PUSH2BRIDGE.rec = 0;
+PUSH2BRIDGE.req = 0;
 PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
 PUSH2BRIDGE.dropouts = 0;
 PUSH2BRIDGE.overloadWas = 0;
@@ -98,11 +103,25 @@ PUSH2BRIDGE.connectScene = function() {
         PUSH2BRIDGE.nav = Math.max(0, Math.min(127, Math.round(v)));
     });
     if (navConn) { navConn.trigger(); }
+    var recConn = engine.makeConnection('[Skin]', 'pusher_rec', function(v) {
+        PUSH2BRIDGE.rec = Math.max(0, Math.min(16383, Math.round(v)));
+    });
+    if (recConn) { recConn.trigger(); }
+    var reqConn = engine.makeConnection('[Skin]', 'pusher_req', function(v) {
+        PUSH2BRIDGE.req = Math.max(0, Math.min(16383, Math.round(v)));
+    });
+    if (reqConn) { reqConn.trigger(); }
 };
 
 PUSH2BRIDGE.sendPlaylist = function() {
     var p = PUSH2BRIDGE.split14(PUSH2BRIDGE.playlist);
-    midi.sendSysexMsg([0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_PLAYLIST, p[0], p[1], PUSH2BRIDGE.nav, 0xF7], 7);
+    var r = PUSH2BRIDGE.split14(PUSH2BRIDGE.rec);
+    var q = PUSH2BRIDGE.split14(PUSH2BRIDGE.req);
+    var recStatus = Math.max(0, Math.min(127, Math.round(engine.getValue('[Recording]', 'status'))));
+    var autodj = engine.getValue('[AutoDJ]', 'enabled') ? 1 : 0;
+    var msg = [0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_PLAYLIST, p[0], p[1], PUSH2BRIDGE.nav,
+        r[0], r[1], recStatus, autodj, q[0], q[1], 0xF7];
+    midi.sendSysexMsg(msg, msg.length);
 };
 
 PUSH2BRIDGE.sendScene = function() {

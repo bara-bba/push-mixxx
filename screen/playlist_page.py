@@ -26,7 +26,7 @@ import os
 import sqlite3
 import time
 
-from PIL import ImageDraw
+from PIL import Image, ImageDraw
 
 from pi_stats import BODY_BOLD_FONTS, BODY_FONTS, DIM, EDGE, FAINT, INK, LIME, LINE, _font
 
@@ -55,6 +55,11 @@ NAV_ROW_H = 18
 # Mixxx's highlighted sidebar row: the first non-lime pixel is the expand arrow
 # or icon - x 8 / 23-24 on a top-level row, 28+ deeper (measured on the Pi)
 DEPTH_X = 26
+# Mixxx's own sidebar icons (cropped from its sidebar on the Pi), one 13x12
+# alpha mask per NAV_NAMES entry, in that order; drawn in Mixxx's orange
+NAV_ICONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nav_icons.png')
+NAV_ICON_W = 13
+NAV_ICON_COLOR = (238, 95, 0)
 
 HEAD_H = 20
 ROWS = 8
@@ -78,6 +83,12 @@ class PlaylistPage:
         self._f_name = _font(BODY_FONTS, 12)
         self._f_meta = _font(BODY_FONTS, 10)
         self._f_nav = _font(BODY_FONTS, 13)
+        try:
+            strip = Image.open(NAV_ICONS).convert('L')
+            self._icons = [strip.crop((i * NAV_ICON_W, 0, (i + 1) * NAV_ICON_W, strip.height))
+                           for i in range(strip.width // NAV_ICON_W)]
+        except OSError:
+            self._icons = []
 
     @property
     def count(self):
@@ -95,18 +106,21 @@ class PlaylistPage:
         first = next((x for x in range(0, 200) if frame.getpixel((x, y)) != LIME), 200)
         return 1 if first < DEPTH_X else 2
 
-    def draw_nav(self, frame, cursor):
-        """Paint the nav over Mixxx's sidebar, the cursor's entry highlighted."""
+    def draw_nav(self, frame, cursor, rows=NAV_ROWS):
+        """Paint the nav over Mixxx's sidebar, the cursor's entry highlighted;
+        rows shown (fewer leaves the bottom free for the analysis bar)."""
         x0, y0, x1, y1 = SIDEBAR_BOX
         draw = ImageDraw.Draw(frame)
-        draw.rectangle([x0, y0, x1 - 1, y1 - 1], fill=INK)
-        first = max(0, min(cursor - NAV_ROWS // 2, len(NAV_NAMES) - NAV_ROWS))
-        for row, i in enumerate(range(first, min(first + NAV_ROWS, len(NAV_NAMES)))):
+        draw.rectangle([x0, y0, x1 - 1, y0 + rows * NAV_ROW_H - 1], fill=INK)
+        first = max(0, min(cursor - rows // 2, len(NAV_NAMES) - rows))
+        for row, i in enumerate(range(first, min(first + rows, len(NAV_NAMES)))):
             y = y0 + row * NAV_ROW_H
             on = i == cursor
             if on:
                 draw.rectangle([x0, y, x1 - 1, y + NAV_ROW_H - 2], fill=LIME)
-            draw.text((x0 + 10, y + 1), NAV_NAMES[i], font=self._f_nav, fill=INK if on else LINE)
+            if i < len(self._icons):
+                frame.paste(INK if on else NAV_ICON_COLOR, (x0 + 10, y + 3), self._icons[i])
+            draw.text((x0 + 30, y + 1), NAV_NAMES[i], font=self._f_nav, fill=INK if on else LINE)
             if NAV_NAMES[i] == 'Playlists':
                 n = str(self.count)
                 draw.text((x1 - 10 - draw.textlength(n, font=self._f_meta), y + 3), n,

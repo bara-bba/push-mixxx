@@ -666,6 +666,13 @@
                 <status>0xBF</status><midino>0x7C</midino>
                 <options><script-binding/></options></control>
 
+            <!-- Sent by the Pi screen app (screen/library_pages.py): number of
+                 files in the recordings folder -->
+            <control><group></group><key>PUSH2T.recPage</key>
+                <description>Recordings count (CC 122, channel 16)</description>
+                <status>0xBF</status><midino>0x7A</midino>
+                <options><script-binding/></options></control>
+
             <!-- Sent by the Pi screen app: Mixxx's sidebar isn't on the entry the
                  painted nav shows - put it back -->
             <control><group></group><key>PUSH2T.navResync</key>

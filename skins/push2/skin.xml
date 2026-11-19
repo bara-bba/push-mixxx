@@ -65,6 +65,11 @@
       <!-- Browse page nav entry painted by the screen app (pusher-script.js PUSH2T.nav):
            cursor + 1, 100 = Mixxx's own tree open (Computer/History) -->
       <attribute config_key="[Skin],pusher_nav">0</attribute>
+      <!-- Browse page recordings list (pusher-script.js PUSH2T.rec, drawn by screen/library_pages.py):
+           0 off, cursor + 1, 1000 + cursor = delete armed, 2000 + cursor = delete it -->
+      <attribute config_key="[Skin],pusher_rec">0</attribute>
+      <!-- one-shot request to the Pi screen app (PUSH2T.req): kind * 128 + sequence -->
+      <attribute config_key="[Skin],pusher_req">0</attribute>
       <!-- FX page: effect slot picked with the Push arrows (1-6), written by pusher-script.js -->
       <attribute config_key="[Skin],pusher_fx_sel">1</attribute>
       <!-- FX page: 0 = 3 effects per unit, 1 = the selected effect expanded (hold RESET) -->

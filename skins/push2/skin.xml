@@ -70,6 +70,11 @@
       <attribute config_key="[Skin],pusher_rec">0</attribute>
       <!-- one-shot request to the Pi screen app (PUSH2T.req): kind * 128 + sequence -->
       <attribute config_key="[Skin],pusher_req">0</attribute>
+      <!-- beatgrid edit mode (pusher-script.js PUSH2T.grid, drawn by screen/grid_page.py):
+           deck 1/2 (+4 = BEAT 1 set), BEAT 1 time in 1/10 s, beats the last BEAT 2 measured -->
+      <attribute config_key="[Skin],pusher_grid">0</attribute>
+      <attribute config_key="[Skin],pusher_grid_a">0</attribute>
+      <attribute config_key="[Skin],pusher_grid_n">0</attribute>
       <!-- FX page: effect slot picked with the Push arrows (1-6), written by pusher-script.js -->
       <attribute config_key="[Skin],pusher_fx_sel">1</attribute>
       <!-- FX page: 0 = 3 effects per unit, 1 = the selected effect expanded (hold RESET) -->

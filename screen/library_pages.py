@@ -39,6 +39,10 @@ LIVE_SECONDS = 15   # a file written to this recently is the recording in progre
 
 # Push 2 top display buttons: CC 102 + i sits above x 120 * i .. 120 * (i + 1)
 AUTODJ_LABELS = {104: 'AUTO DJ', 105: 'FADE NOW', 106: 'SKIP NEXT', 107: 'SHUFFLE', 108: '+ RANDOM'}
+# shown on the button's label for a moment after a press (one-shot actions)
+AUTODJ_DONE = {105: 'FADING…', 106: 'SKIPPED', 107: 'SHUFFLED', 108: '+1 SONG'}
+AUTODJ_FLASH_SECONDS = 0.9
+AUTODJ_NEWS_SECONDS = 4.0   # the summary line tells what + RANDOM added / that SHUFFLE shuffled
 
 
 def _fmt_dur(seconds):
@@ -260,6 +264,7 @@ class AutoDJPage:
     def __init__(self, music_drive):
         self.db_path = os.path.join(music_drive, '.mixxx', 'mixxxdb.sqlite') if music_drive else None
         self._queue = []      # (artist, title, duration) in play order
+        self.shuffle_on = False   # latching SHUFFLE (state from pusher-script.js)
         self._read_at = 0.0
         self._f_head = _font(BODY_BOLD_FONTS, 11)
         self._f = _font(BODY_FONTS, 12)
@@ -275,29 +280,73 @@ class AutoDJPage:
             try:
                 # hidden 1 = the Auto DJ queue
                 self._queue = db.execute(
-                    'select l.artist, l.title, l.duration from PlaylistTracks pt '
+                    'select l.artist, l.title, l.duration, l.album, l.bpm, l.key from PlaylistTracks pt '
                     'join Playlists p on p.id = pt.playlist_id and p.hidden = 1 '
                     'join library l on l.id = pt.track_id and l.mixxx_deleted = 0 '
                     'order by pt.position').fetchall()
+                # the song added last (+ RANDOM appends it at the end, out of sight)
+                self._newest = db.execute(
+                    'select pt.id, l.title, l.artist, pt.position from PlaylistTracks pt '
+                    'join Playlists p on p.id = pt.playlist_id and p.hidden = 1 '
+                    'join library l on l.id = pt.track_id '
+                    'order by pt.pl_datetime_added desc, pt.id desc limit 1').fetchone()
             finally:
                 db.close()
         except sqlite3.Error as e:
             print(f'[autodj] library read failed: {e}', flush=True)
 
+    def draw_queue(self, frame):
+        """The queue as a table, in the skin's columns - shown while Mixxx is
+        still switching to its own Auto DJ table (it takes about half a second)."""
+        self._load()
+        draw = ImageDraw.Draw(frame)
+        draw.rectangle([PANE_X, 46, 959, 159], fill=INK)
+        cols = [(PANE_X + 72, 236), (524, 144), (674, 124), (806, 46), (860, 42), (908, 48)]
+        for i, (artist, title, dur, album, bpm, key) in enumerate(self._queue[:5]):
+            y = 50 + i * 20
+            vals = [title or '', artist or '', album or '', f'{bpm:.1f}' if bpm else '-', key or '',
+                    _fmt_dur(dur)]
+            for (x, w), v in zip(cols, vals):
+                draw.text((x, y), _fit(draw, v, self._f, w - 6), font=self._f, fill=LINE)
+        return frame
+
+    @property
+    def queue(self):
+        return self._queue
+
+    def refresh(self):
+        self._load()
+
+    def refresh_soon(self):
+        self._read_at = 0.0   # re-read the queue on the next draw
+
+    def pressed(self, cc):
+        """A top button was pressed (mixxx-midi-bridge.py hears the Push):
+        confirm it on its label, and re-read the queue shortly after."""
+        if cc in AUTODJ_DONE:
+            self._flash = (cc, time.monotonic())
+            if cc == 108:
+                self._before = getattr(self, '_newest', None)
+            self._read_at = time.monotonic() - 1.6   # reload in ~0.4 s, once Mixxx has it
+
     def draw(self, frame, enabled):
         self._load()
+        flash_cc, flash_at = getattr(self, '_flash', (None, 0.0))
+        if time.monotonic() - flash_at > AUTODJ_FLASH_SECONDS:
+            flash_cc = None
         draw = ImageDraw.Draw(frame)
         # button labels over the sort labels, one per Push button column
         draw.rectangle([PANE_X, 0, 959, HEAD_H - 1], fill=INK)
         for cc, label in AUTODJ_LABELS.items():
             x0 = max(120 * (cc - 102), PANE_X) + 3
             x1 = 120 * (cc - 101) - 4
-            on = cc == 104 and enabled
+            on = (cc == 104 and enabled) or (cc == 107 and self.shuffle_on) or cc == flash_cc
             if on:
                 draw.rectangle([x0, 2, x1, HEAD_H - 3], fill=LIME)
             else:
                 draw.rectangle([x0, 2, x1, HEAD_H - 3], outline=EDGE)
-            text = 'AUTO DJ ON' if on else label
+            text = AUTODJ_DONE[cc] if cc == flash_cc else (
+                ('AUTO DJ ON' if cc == 104 else 'SHUFFLE ON') if on else label)
             tw = draw.textlength(text, font=self._f_head)
             draw.text(((x0 + x1 - tw) / 2, 4), text, font=self._f_head, fill=INK if on else LINE)
         # queue summary over Mixxx's control row
@@ -311,14 +360,25 @@ class AutoDJPage:
             hint = 'add songs from Tracks / Playlists with the 2nd top button (SHIFT: to the top)'
             draw.text((x + 90, y0 + 6), hint, font=self._f_meta, fill=DIM)
             return frame
-        total = sum(d or 0 for _, _, d in self._queue)
+        total = sum(q[2] or 0 for q in self._queue)
         summary = f'{n} song{"s" if n != 1 else ""} · {_fmt_dur(total)}'
         draw.text((x, y0 + 5), summary, font=self._f_head, fill=LINE)
         x += draw.textlength(summary, font=self._f_head) + 20
-        artist, title, _ = self._queue[0]
-        draw.text((x, y0 + 6), 'NEXT', font=self._f_meta, fill=FAINT)
-        x += 34
-        nxt = ' — '.join(t for t in (title, artist) if t)
+        artist, title = self._queue[0][:2]
+        tag, nxt = 'NEXT', ' — '.join(t for t in (title, artist) if t)
+        news_cc, news_at = getattr(self, '_flash', (None, 0.0))
+        if time.monotonic() - news_at < AUTODJ_NEWS_SECONDS:
+            newest = getattr(self, '_newest', None)
+            if news_cc == 108:
+                if newest and newest != getattr(self, '_before', None):
+                    tag = 'ADDED'
+                    nxt = ' — '.join(t for t in newest[1:3] if t) + f'  (#{newest[3]}, at the end)'
+                else:
+                    tag, nxt = 'ADDING', 'a random song…'
+            elif news_cc == 107:
+                tag = 'SHUFFLED · NEXT'
+        draw.text((x, y0 + 6), tag, font=self._f_meta, fill=LIME if tag != 'NEXT' else FAINT)
+        x += draw.textlength(tag, font=self._f_meta) + 10
         draw.text((x, y0 + 4), _fit(draw, nxt, self._f, 959 - 10 - x - 130), font=self._f, fill=LINE)
         hint = 'DELETE: remove song'
         draw.text((959 - 10 - draw.textlength(hint, font=self._f_meta), y0 + 6), hint, font=self._f_meta, fill=DIM)

@@ -6,6 +6,11 @@ in Mixxx would be overwritten on the next start). Playlists this script made
 whose file is gone are deleted; the names it manages are kept in
 <drive>/.mixxx/managed-playlists.txt so playlists made in Mixxx are left alone.
 
+It also keeps the library to the drive itself (library_root): Mixxx's
+recordings (~/Music/Mixxx/Recordings, on the SD card) are not tracks - they
+have their own page - so they must not show up under Tracks or be picked by
+Auto DJ's + RANDOM.
+
 Songs that are on the drive but not in the library yet (new drive / newly
 exported songs) can't be added before Mixxx's startup scan; they're listed in
 ~/.cache/mixxx-playlists-pending and usb/playlist-watch.sh restarts Mixxx once
@@ -61,7 +66,30 @@ def write_set(path, items):
         f.write(''.join(i + '\n' for i in sorted(items)))
 
 
+def library_root():
+    """The library = the drive only. Mixxx's library folder used to be ~/Music,
+    which also holds Mixxx's recordings folder: the startup scan added every
+    recording as a track. Point it at the drive and hide whatever is in the
+    library from outside it (the recordings so far)."""
+    db = sqlite3.connect(DB, timeout=10)
+    try:
+        dirs = [r[0] for r in db.execute('select directory from directories')]
+        if dirs != [DRIVE]:
+            db.execute('delete from directories')
+            db.execute('insert into directories (directory) values (?)', (DRIVE,))
+            print(f'library folder: {dirs} -> {DRIVE}')
+        hidden = db.execute(
+            'update library set mixxx_deleted = 1 where mixxx_deleted = 0 and location in '
+            '(select id from track_locations where location not like ?)', (DRIVE + '/%',)).rowcount
+        if hidden:
+            print(f'{hidden} tracks from outside the drive hidden (recordings...)')
+        db.commit()
+    finally:
+        db.close()
+
+
 def main():
+    library_root()
     files = sorted(glob.glob(os.path.join(DRIVE, 'Playlists', '*.m3u8'))
                    + glob.glob(os.path.join(DRIVE, 'Playlists', '*.m3u')))
     managed_before = read_set(MANAGED)

@@ -63,7 +63,7 @@ sorting: on/off, fade now, skip next, shuffle, add a random song (their labels
 replace the sort labels), and a summary of the queue (songs, total length, the
 next one) replaces Mixxx's control row. DELETE with the queue focused removes
 the selected song. On the other pages the 2nd top button adds the selected
-songs to the queue (SHIFT: to the top).
+songs to the queue (SHIFT: to the top), and so does SHIFT + Right (to the end).
 
 On **Recordings** the right pane shows the recording in progress (time, size,
 file) or "hold REC to start", the free space, and the recordings folder below
@@ -117,6 +117,7 @@ forever, even with a Record/Broadcast input).
 | hold **Setup** 3 s | restart Mixxx (countdown on screen, release to cancel) |
 | **Shift** + hold **Setup** 3 s | eject the USB drive (Mixxx quits cleanly, saves cues; "Safe to remove") |
 | **Delete** | closes any Mixxx popup window that landed on the screen |
+| hold **Select** 2 s (Device, on the deck selected with SHIFT + deck select) | beatgrid edit: zoomed waveform, top buttons BEAT HERE / BEAT 1 / BEAT 2 / ÷2 / ×2 / UNDO / ZOOM / DONE, ◄ ► move the grid, ▲ ▼ BPM ±0.01 (SHIFT ×10); BEAT 1 then BEAT 2 on a later beat sets the BPM from the beats between them; DELETE (lit) puts the grid back as it was when the edit started. The grid is saved to the drive's library like cues: once the song is unloaded, and always when Mixxx quits |
 
 See [Screens](#screens) for what each one looks like.
 
@@ -134,7 +135,9 @@ See [Screens](#screens) for what each one looks like.
   every boot. No drive = Mixxx waits, the Push shows "Insert USB drive".
 - **Playlists** come from `<drive>/Playlists/*.m3u8` (written by the separate
   iTunes→USB exporter) and are mirrored into locked Mixxx playlists on each
-  start (`usb/import_playlists.py`).
+  start (`usb/import_playlists.py`). The same script keeps Mixxx's library
+  folder to the drive itself: recordings (`~/Music/Mixxx/Recordings`) are
+  not tracks, so they never show under Tracks or get picked by + RANDOM.
 - **Mixxx quits cleanly on every stop** (Ctrl+Q via `mixxx-clean-quit`), so cues
   are saved; pulling the power still loses unsaved cues. Window geometry and the
   default FX (Reverb/Filter/Flanger, Echo/Filter/Phaser) are reset at each start.

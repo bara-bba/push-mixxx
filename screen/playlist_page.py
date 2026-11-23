@@ -43,6 +43,7 @@ MARK_PROBES = [(300, 23), (900, 23), (900, 40), (600, 40)]
 # Crates 340, Computer 370.
 HEADING_BAND = (24, 48)
 PLAYLISTS_HEADING_END = (353, 364)
+COMPUTER_HEADING_END = (365, 376)
 
 # left column: preview, its 2px focus bar (lit while the sidebar has focus), the sidebar
 SIDEBAR_FOCUS_Y = 68
@@ -50,6 +51,8 @@ SIDEBAR_BOX = (0, 70, 280, 160)
 # Same order as pusher-script.js PUSH2T.NAV_REAL
 NAV_NAMES = ['Tracks', 'Playlists', 'Auto DJ', 'Computer', 'Recordings', 'History', 'Analyze']
 NAV_TREE_OPEN = 100   # [Skin],pusher_nav while Mixxx's own tree shows
+NAV_ALIASES = {'Analyse': 'Analyze'}   # Mixxx's tree names -> NAV_NAMES (UI English variant)
+TREE_INDENT = 14      # draw_tree: px per level below the top one
 NAV_ROWS = 5
 NAV_ROW_H = 18
 # Mixxx's highlighted sidebar row: the first non-lime pixel is the expand arrow
@@ -66,6 +69,15 @@ ROWS = 8
 ROW_H = 17
 COLS = 3
 DB_REFRESH_SECONDS = 3.0
+
+
+def _elide(draw, text, font, width):
+    """text cut with … to fit width px."""
+    if draw.textlength(text, font=font) <= width:
+        return text
+    while text and draw.textlength(text + '…', font=font) > width:
+        text = text[:-1]
+    return text + '…'
 
 
 def _fmt_len(seconds):
@@ -125,6 +137,84 @@ class PlaylistPage:
                 n = str(self.count)
                 draw.text((x1 - 10 - draw.textlength(n, font=self._f_meta), y + 3), n,
                           font=self._f_meta, fill=INK if on else FAINT)
+        return frame
+
+    def draw_tree(self, frame, tree_rows, rows=NAV_ROWS):
+        """Mixxx's open tree (mixxx_tree.py rows) in the nav's style: no
+        arrows, children indented under their parent, the selected row
+        highlighted at the same place the nav keeps its cursor. Top-level rows
+        the nav hides (Crates, other DJ apps' sections) stay hidden unless
+        selected. False if there's nothing to draw (no selected row)."""
+        shown = [r for r in tree_rows
+                 if r.selected or r.depth > 1 or NAV_ALIASES.get(r.name, r.name) in NAV_NAMES]
+        cursor = next((i for i, r in enumerate(shown) if r.selected), None)
+        if cursor is None:
+            return False
+        x0, y0, x1, y1 = SIDEBAR_BOX
+        draw = ImageDraw.Draw(frame)
+        draw.rectangle([x0, y0, x1 - 1, y0 + rows * NAV_ROW_H - 1], fill=INK)
+        first = max(0, min(cursor - rows // 2, len(shown) - rows))
+        for row, i in enumerate(range(first, min(first + rows, len(shown)))):
+            r, y = shown[i], y0 + row * NAV_ROW_H
+            on = i == cursor
+            if on:
+                draw.rectangle([x0, y, x1 - 1, y + NAV_ROW_H - 2], fill=LIME)
+            name = NAV_ALIASES.get(r.name, r.name)
+            if r.depth == 1:
+                icon = NAV_NAMES.index(name) if name in NAV_NAMES else -1
+                if 0 <= icon < len(self._icons):
+                    frame.paste(INK if on else NAV_ICON_COLOR, (x0 + 10, y + 3), self._icons[icon])
+                tx = x0 + 30
+            else:
+                tx = x0 + 30 + (r.depth - 1) * TREE_INDENT
+            right = x1 - 10
+            if name == 'Playlists' and r.depth == 1:
+                n = str(self.count)
+                nw = draw.textlength(n, font=self._f_meta)
+                draw.text((right - nw, y + 3), n, font=self._f_meta, fill=INK if on else FAINT)
+                right -= nw + 8
+            draw.text((tx, y + 1), _elide(draw, name, self._f_nav, right - tx), font=self._f_nav,
+                      fill=INK if on else (LINE if r.depth == 1 else DIM))
+        return True
+
+    @staticmethod
+    def mixxx_page(frame):
+        """Which of the pages that have a look of their own Mixxx shows in the
+        right pane: 'playlists', 'computer', 'textpage' (another sidebar root's
+        help text), 'autodj' (its control row), 'recordings' (its Start
+        Recording button) or 'table'. Used to spot Mixxx still showing the
+        previous page after the nav moved."""
+        if all(frame.getpixel(p) == TEXT_PAGE_MARK for p in MARK_PROBES):
+            end = PlaylistPage._heading_end(frame)
+            if PLAYLISTS_HEADING_END[0] <= end <= PLAYLISTS_HEADING_END[1]:
+                return 'playlists'
+            if COMPUTER_HEADING_END[0] <= end <= COMPUTER_HEADING_END[1]:
+                return 'computer'
+            return 'textpage'
+        white = lambda x0, x1: sum(1 for x in range(x0, x1, 2) for y in range(26, 40, 2)
+                                   if min(frame.getpixel((x, y))) > 220)
+        if white(286, 320) > 20 and white(420, 540) > 40:
+            return 'autodj'      # its buttons and the transition combo box
+        if white(286, 370) > 40 and white(420, 540) < 5:
+            return 'recordings'
+        return 'table'
+
+    @staticmethod
+    def _heading_end(frame):
+        y0, y1 = HEADING_BAND
+        band = frame.crop((PANE_X, y0, 420, y1))
+        w, h = band.size
+        px = band.load()
+        end = max((x for x in range(w) for y in range(h) if px[x, y] != TEXT_PAGE_MARK), default=-1)
+        return PANE_X + end
+
+    def draw_placeholder(self, frame, title, text=''):
+        """The right pane while Mixxx is still switching to the page."""
+        draw = ImageDraw.Draw(frame)
+        draw.rectangle([PANE_X, HEAD_H + 2, 959, 159], fill=INK)
+        draw.text((PANE_X + 10, HEAD_H + 8), title.upper(), font=self._f_head, fill=LINE)
+        if text:
+            draw.text((PANE_X + 10, HEAD_H + 28), text, font=self._f_name, fill=DIM)
         return frame
 
     @staticmethod

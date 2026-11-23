@@ -52,6 +52,9 @@ PUSH2BRIDGE.playlist = 0;
 PUSH2BRIDGE.nav = 0;
 PUSH2BRIDGE.rec = 0;
 PUSH2BRIDGE.req = 0;
+// then beatgrid edit (pusher-script.js PUSH2T.grid): [Skin],pusher_grid, hi lo
+// of pusher_grid_a (BEAT 1, 1/10 s), the edited deck's file_bpm x 1000 in three
+// 7-bit bytes, hi lo of pusher_grid_n
 PUSH2BRIDGE.POLL_MS = 40; // 25Hz - smooth waveform/position scroll, cheap sysex payload
 PUSH2BRIDGE.dropouts = 0;
 PUSH2BRIDGE.overloadWas = 0;
@@ -97,14 +100,17 @@ PUSH2BRIDGE.connectScene = function() {
     if (PUSH2BRIDGE.sceneConn) { PUSH2BRIDGE.sceneConn.trigger(); }
     var plConn = engine.makeConnection('[Skin]', 'pusher_playlist', function(v) {
         PUSH2BRIDGE.playlist = Math.max(0, Math.min(16383, Math.round(v)));
+        PUSH2BRIDGE.sendPlaylist();   // now, not at the next tick: the screen app's pages follow it
     });
     if (plConn) { plConn.trigger(); }
     var navConn = engine.makeConnection('[Skin]', 'pusher_nav', function(v) {
         PUSH2BRIDGE.nav = Math.max(0, Math.min(127, Math.round(v)));
+        PUSH2BRIDGE.sendPlaylist();   // now, not at the next tick: the screen app's pages follow it
     });
     if (navConn) { navConn.trigger(); }
     var recConn = engine.makeConnection('[Skin]', 'pusher_rec', function(v) {
         PUSH2BRIDGE.rec = Math.max(0, Math.min(16383, Math.round(v)));
+        PUSH2BRIDGE.sendPlaylist();   // now, not at the next tick: the screen app's pages follow it
     });
     if (recConn) { recConn.trigger(); }
     var reqConn = engine.makeConnection('[Skin]', 'pusher_req', function(v) {
@@ -119,8 +125,14 @@ PUSH2BRIDGE.sendPlaylist = function() {
     var q = PUSH2BRIDGE.split14(PUSH2BRIDGE.req);
     var recStatus = Math.max(0, Math.min(127, Math.round(engine.getValue('[Recording]', 'status'))));
     var autodj = engine.getValue('[AutoDJ]', 'enabled') ? 1 : 0;
+    var grid = Math.round(engine.getValue('[Skin]', 'pusher_grid')) & 0x7F;
+    var ga = PUSH2BRIDGE.split14(engine.getValue('[Skin]', 'pusher_grid_a'));
+    var gn = PUSH2BRIDGE.split14(engine.getValue('[Skin]', 'pusher_grid_n'));
+    var deck = grid & 3;
+    var fbpm = deck ? Math.max(0, Math.min(2097151, Math.round(engine.getValue('[Channel' + deck + ']', 'file_bpm') * 1000))) : 0;
     var msg = [0xF0, PUSH2BRIDGE.SYSEX_ID, PUSH2BRIDGE.TYPE_PLAYLIST, p[0], p[1], PUSH2BRIDGE.nav,
-        r[0], r[1], recStatus, autodj, q[0], q[1], 0xF7];
+        r[0], r[1], recStatus, autodj, q[0], q[1],
+        grid, ga[0], ga[1], (fbpm >> 14) & 0x7F, (fbpm >> 7) & 0x7F, fbpm & 0x7F, gn[0], gn[1], 0xF7];
     midi.sendSysexMsg(msg, msg.length);
 };
 

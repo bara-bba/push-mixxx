@@ -34,7 +34,14 @@ from mixxx_capture import MixxxSkinCapture, _x11_focus_main, close_mixxx_popups,
 import playlist_analysis
 from playlist_analysis import AnalysisProgress
 from library_pages import AutoDJPage, RecordingsPage
-from playlist_page import NAV_NAMES, NAV_TREE_OPEN, PlaylistPage
+from grid_page import GridPage
+from web_queue import WebQueue
+from playlist_page import NAV_ALIASES, NAV_NAMES, NAV_TREE_OPEN, PlaylistPage
+try:   # Mixxx's tree and popups over AT-SPI (needs jeepney + accessibility on in mixxx.service)
+    from mixxx_tree import MixxxTree, press_mixxx_button
+    from popup_page import MixxxPopups, PopupPage
+except ImportError:
+    MixxxTree = MixxxPopups = PopupPage = press_mixxx_button = None
 from pi_stats import BODY_BOLD_FONTS, DISPLAY_FONTS, EDGE, INK, LIME, LINE, DIM, PiStats, _font
 
 Push2Display = importlib.import_module('mixxx-to-push2').Push2Display
@@ -70,8 +77,13 @@ PLAYLISTS_CC = bytes([0xBF, 0x7E])  # + count: pusher-script.js PUSH2T.plPage
 DEPTH_CC = bytes([0xBF, 0x7D])  # + 1 top-level / 2 deeper: PUSH2T.navDepth
 ANALYSED_CC = bytes([0xBF, 0x7C])  # + 1 queued / 2 failed: PUSH2T.plAnalysed
 RESYNC_CC = bytes([0xBF, 0x7B, 0x01])  # PUSH2T.navResync
+POPUP_CC = bytes([0xBF, 0x78])  # + 1 open / 0 closed: PUSH2T.popupState
+POPUP_RESEND_SECONDS = 2.0
+CC_LEFT, CC_RIGHT, CC_UP, CC_DOWN = 44, 45, 46, 47   # Push arrows
 RECORDINGS_CC = bytes([0xBF, 0x7A])  # + number of recordings: PUSH2T.recPage
 REQ_DELETE_KEY = 1  # [Skin],pusher_req kind: press Delete in Mixxx (remove from the Auto DJ queue)
+REQ_SHUFFLE_ON, REQ_SHUFFLE_OFF = 2, 3   # latching shuffle (screen app presses Mixxx's Shuffle button)
+SHUFFLE_TOOLTIP = 'Shuffle the content of the Auto DJ queue'
 CC_RECORD = 86  # push-mixxx starts/stops recording on a REC_HOLD_SECONDS hold
 REC_HOLD_SECONDS = 0.8  # = pusher-script.js PUSH2T.REC_HOLD_MS
 PL_ANALYSE = 256  # pusher_playlist >= this: Convert asked to analyse playlist (value - 256)
@@ -79,8 +91,14 @@ ANALYSE_SETTLE_SECONDS = 0.4  # the script's sidebar steps, before the right-cli
 FREEZE_AFTER_SECONDS = 0.4  # the Push image stays still this long after a request
 RESYNC_AFTER_SECONDS = 1.0  # Playlists page under another nav entry this long = drifted
 RESYNC_EVERY_SECONDS = 3.0
+STALE_MAX_SECONDS = 2.0   # cover Mixxx's previous page at most this long after the nav moved
+# what Mixxx shows for each nav entry once it caught up (playlist_page.py mixxx_page)
+NAV_MIXXX_PAGE = {'Playlists': 'playlists', 'Auto DJ': 'autodj', 'Computer': 'computer',
+                  'Recordings': 'recordings'}
+PAINTED_LOOKS = {'playlists', 'autodj', 'computer', 'recordings'}
 PLAYLISTS_RESEND_SECONDS = 2.0
 PLAYLISTS_GONE_SECONDS = 0.8
+TREE_HOLD_SECONDS = 2.0   # Mixxx's tree unreadable: keep the last one drawn this long
 FRAME_DUMP = '/tmp/push2-frame.png'  # written on SIGUSR1 (debugging)
 
 SCENE_NAMES = {0: 'none', 1: 'browse', 2: 'device', 3: 'mix', 4: 'clip'}
@@ -118,6 +136,10 @@ class MixxxState:
         self.rec_status = 0       # [Recording],status: 0 off, 1 waiting for audio, 2 recording
         self.autodj = 0           # [AutoDJ],enabled
         self.req = None           # pusher_req: last one-shot request seen
+        self.grid = 0             # pusher_grid: beatgrid edit deck 1/2 (+4 = BEAT 1 set), 0 = off
+        self.grid_a = 0.0         # BEAT 1 time, s
+        self.grid_bpm = 0.0       # the edited deck's file_bpm
+        self.grid_n = 0           # beats the last BEAT 2 measured over
 
 
 class MixxxMidiBridge:
@@ -150,14 +172,23 @@ class MixxxMidiBridge:
         self.playlist_page = PlaylistPage(music_drive)  # names over Mixxx's Playlists text page
         self._pl_sent = (None, 0.0)  # (count, monotonic) last reported to the mapping
         self._depth_sent = None
+        self._tree_from = None    # nav page the Mixxx tree was opened from
+        self._tree_last = None    # (rows, when) last tree drawn
+        self._blank_since = None  # tree open: since when the right pane is empty
         self._pl_gone_since = None
+        self.tree = MixxxTree() if MixxxTree else None   # Mixxx's open tree, painted like the nav
+        self.popups = MixxxPopups() if MixxxPopups else None   # Mixxx's popups, answered with the arrows
+        self.popup_page = PopupPage() if PopupPage else None
+        self._popup_sent = (None, 0.0)
         self.analysis = AnalysisProgress(music_drive)  # Convert on a playlist
         self._raw_frame = None      # newest capture without overlays
         self._freeze_until = 0.0    # hold the Push image still until then (monotonic)
         self._drift_since = None    # Playlists page shown under another nav entry since
         self._resync_at = 0.0
+        self._page_since = (None, 0.0)   # (nav page, monotonic) when the nav last moved
         self.recordings = RecordingsPage()
         self.autodj_page = AutoDJPage(music_drive)
+        self.grid_page = GridPage()
         self._rec_sent = (None, 0.0)
         self._rec_pressed_at = None  # REC held since (monotonic), for the countdown
         self._dump_frame = False
@@ -238,11 +269,19 @@ class MixxxMidiBridge:
             if playlist >= PL_ANALYSE and self.state.playlist < PL_ANALYSE:
                 threading.Thread(target=self._analyse_playlist, args=(playlist - PL_ANALYSE,),
                                  daemon=True).start()
+            if len(data) >= 5 and (data[4], playlist) != (self.state.nav, self.state.playlist):
+                print(f'[library] script: nav {data[4]} playlist {playlist}', flush=True)
             self.state.playlist = playlist
             if len(data) >= 5:
                 self.state.nav = data[4]
             if len(data) >= 11:
                 self._library_state(data)
+            if len(data) >= 19:
+                st = self.state
+                st.grid = data[11]
+                st.grid_a = ((data[12] << 7) | data[13]) / 10
+                st.grid_bpm = ((data[14] << 14) | (data[15] << 7) | data[16]) / 1000
+                st.grid_n = (data[17] << 7) | data[18]
         elif frame_type == TYPE_AUDIO and len(data) >= 5:
             count, pct = (data[2] << 7) | data[3], data[4]
             st = self.state
@@ -293,7 +332,15 @@ class MixxxMidiBridge:
             self._led(CC_SETUP, LED_DIM)
             self._led(CC_USER, LED_BRIGHT if self.show_stats else LED_DIM)
             return
+        if (msg.channel != 15 and msg.value > 0 and msg.control in (CC_LEFT, CC_RIGHT, CC_UP, CC_DOWN)
+                and self.popups and self.popups.current()):
+            self._popup_key(msg.control)
+            return
+        if msg.channel != 15 and msg.value > 0 and msg.control in (105, 106, 108):
+            self.autodj_page.pressed(msg.control)   # only shows on the Auto DJ page (SHUFFLE: once shuffled)
         if msg.control == CC_DELETE and msg.value > 0:
+            if self.popups:
+                self.popups._forget()
             closed = close_mixxx_popups()
             if closed:
                 print(f"[popup] DELETE closed {closed} window(s)")
@@ -387,6 +434,10 @@ class MixxxMidiBridge:
             frame = self._setup_overlay(frame.copy())
         elif self._rec_pressed_at is not None:
             frame = self._rec_overlay(frame.copy())
+        pop = self.popups.current() if self.popups else None
+        self._report_popup(pop is not None)
+        if pop is not None:
+            frame = self.popup_page.draw(frame.copy(), pop)
         if self._dump_frame:  # kill -USR1: save exactly what the Push shows
             self._dump_frame = False
             frame.save(FRAME_DUMP)
@@ -422,6 +473,10 @@ class MixxxMidiBridge:
             if self._frozen() and self._last_skin_frame is not None:
                 return self._last_skin_frame   # Mixxx's sidebar is being worked behind it
             frame = self._playlists_overlay(frame.copy())
+            st = self.state
+            if st.grid & 3:   # beatgrid edit mode (grid_page.py)
+                frame = self.grid_page.draw(frame, st.grid & 3, st.grid_a if st.grid & 4 else None,
+                                            st.grid_bpm, st.grid_n)
         if frame is not None:
             self._last_skin_frame = frame
             return frame
@@ -431,30 +486,96 @@ class MixxxMidiBridge:
 
     def _playlists_overlay(self, frame):
         """Library nav + playlist list over the Browse page (playlist_page.py)."""
+        if self.tree:
+            self.tree.active = self.state.scene == 'browse'   # read Mixxx's tree only in Browse
         if self.state.scene != 'browse':
             return frame
         pl, nav = self.state.playlist, self.state.nav
-        shown = PlaylistPage.shown(frame)
-        self._report_playlists(self.playlist_page.count if shown else 0)
+        page = NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)] if 0 < nav != NAV_TREE_OPEN else None
+        shown = PlaylistPage.shown(frame)   # Mixxx's own Playlists page in the capture
+        # The painted pages follow the nav (the script's state) rather than what
+        # Mixxx shows, so they're there from the first frame: Mixxx takes a
+        # frame or two to switch its page after the nav moves.
+        # the list while it's the page; also right after opening a playlist,
+        # until Mixxx replaces its help text with the songs. Spotting Mixxx's
+        # Playlists page alone only counts before the script has said anything
+        # (nav 0, e.g. just after a restart): Mixxx lags the nav.
+        # ...and while Mixxx still shows the page the nav came from (Auto DJ's
+        # control row, Recordings, Computer's text): with a playlist opened
+        # earlier (pl >= 128) the list would otherwise wait for Mixxx
+        stale = page == 'Playlists' and PlaylistPage.mixxx_page(frame) in ('autodj', 'recordings', 'computer', 'textpage')
+        list_page = ((page == 'Playlists' and (pl < 128 or shown or stale))
+                     or (nav == 0 and shown and pl < 128))
+        self._report_playlists(self.playlist_page.count if list_page else 0)
         depth = PlaylistPage.depth(frame)
         if depth and depth != self._depth_sent:
             self._depth_sent = depth
             self._send_mixxx(DEPTH_CC + bytes([depth]))
             print(f'[library] sidebar highlight depth {depth}', flush=True)
-        if shown:
+        if list_page:
             rows = 7 if self.analysis.showing else 8   # the analysis bar takes the 8th
-            frame = self.playlist_page.draw(frame, pl - 1 if 0 < pl < 128 else -1, rows)
-        page = NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)] if 0 < nav != NAV_TREE_OPEN else None
+            frame = self.playlist_page.draw(frame, pl - 1 if 0 < pl < 128 else (pl - 128 if 128 <= pl < 256 else -1), rows)
         self._report_recordings()
+        # Mixxx takes ~0.5 s to switch its page after the nav moved: cover the
+        # previous page until it has (painted pages cover the pane anyway)
+        now = time.monotonic()
+        if page != self._page_since[0]:
+            self._page_since = (page, now)
+        if page is not None:
+            self._tree_from = page   # the nav entry the tree was opened from
+        looks = PlaylistPage.mixxx_page(frame)
+        lagging = (page is not None and now - self._page_since[1] < STALE_MAX_SECONDS
+                   and looks != NAV_MIXXX_PAGE.get(page, looks if looks not in PAINTED_LOOKS else None))
         if page == 'Recordings':
             frame = self.recordings.draw(frame, self.state.rec, self.state.rec_status)
         elif page == 'Auto DJ':
+            if lagging:
+                frame = self.autodj_page.draw_queue(frame)
             frame = self.autodj_page.draw(frame, self.state.autodj)
+        elif page == 'Computer':
+            frame = self.playlist_page.draw_placeholder(
+                frame, 'Computer', 'Right: browse the folders on the Pi - Quick Links, the USB drive, /')
+        elif lagging and page and page != 'Playlists':
+            frame = self.playlist_page.draw_placeholder(frame, page, 'loading…')
+        elif nav == NAV_TREE_OPEN:   # Mixxx's own tree on the left
+            frame = self._tree_pane(frame, looks)
+        elif page == 'History' and frame.crop((290, 25, 950, 140)).convert('L').getextrema()[1] < 30:
+            frame = self.playlist_page.draw_placeholder(
+                frame, 'History', 'Right: open the past sessions (the songs played in each)')
+        nav_rows = 4 if self.analysis.showing else 5   # the analysis bar takes the 5th
         if nav != NAV_TREE_OPEN:
-            nav_rows = 4 if self.analysis.showing else 5   # the analysis bar takes the 5th
             frame = self.playlist_page.draw_nav(frame, max(nav - 1, 0), nav_rows)
+        else:   # Mixxx's tree, drawn like the nav (Mixxx's own shows if it can't be read)
+            rows = self.tree.rows() if self.tree else None
+            if rows and self.playlist_page.draw_tree(frame, rows, nav_rows):
+                self._tree_last = (rows, now)
+            elif self._tree_last and now - self._tree_last[1] < TREE_HOLD_SECONDS:
+                # Mixxx between two selections (no row selected for a moment) or a
+                # read failed: keep the last tree rather than flash Mixxx's own
+                self.playlist_page.draw_tree(frame, self._tree_last[0], nav_rows)
         self._check_drift(shown, pl, nav)
         return self.analysis.draw(frame)
+
+    def _tree_pane(self, frame, looks):
+        """Right pane while Mixxx's tree is open. Mixxx lags the tree cursor by
+        ~0.5 s and some of its pages are raw or empty: the pages the app paints
+        (Recordings, Auto DJ) get painted here too, an empty pane says so."""
+        now = time.monotonic()
+        if looks == 'computer':   # tree open, no folder picked yet
+            return self.playlist_page.draw_placeholder(
+                frame, 'Computer', 'Up/Down: pick a folder · Right: open it · Left: back to the nav')
+        if looks == 'recordings':
+            return self.recordings.draw(frame, self.state.rec, self.state.rec_status)
+        if looks == 'autodj':
+            return self.autodj_page.draw(self.autodj_page.draw_queue(frame), self.state.autodj)
+        if frame.crop((290, 25, 950, 140)).convert('L').getextrema()[1] < 30:   # empty pane
+            if self._blank_since is None:
+                self._blank_since = now
+            title = getattr(self, '_tree_from', None) or 'Library'
+            text = 'loading…' if now - self._blank_since < 1.0 else 'nothing in here · Up/Down: pick another'
+            return self.playlist_page.draw_placeholder(frame, title, text)
+        self._blank_since = None
+        return frame
 
     def _library_state(self, data):
         """Recordings / Auto DJ part of the 0x06 frame (bridge-script.js)."""
@@ -471,8 +592,46 @@ class MixxxMidiBridge:
             st.req = req          # whatever was pending before this app started
         elif req != st.req:
             st.req = req
+            if req >> 7 in (REQ_SHUFFLE_ON, REQ_SHUFFLE_OFF):
+                self.autodj_page.shuffle_on = req >> 7 == REQ_SHUFFLE_ON
+                print(f'[autodj] shuffle {"on" if self.autodj_page.shuffle_on else "off"}', flush=True)
+                if self.autodj_page.shuffle_on:
+                    threading.Thread(target=self._press_shuffle, daemon=True).start()
             if req >> 7 == REQ_DELETE_KEY:
                 threading.Thread(target=self._press_delete, daemon=True).start()
+
+    def _press_shuffle(self):
+        try:
+            ok = press_mixxx_button(SHUFFLE_TOOLTIP)
+            print(f'[autodj] shuffle {"pressed" if ok else "button not found"}', flush=True)
+        except Exception as e:
+            print(f'[autodj] shuffle failed: {e!r}', flush=True)
+        self.autodj_page.pressed(107)   # re-read the queue
+
+    def _web_queue_changed(self, removed=False):
+        """Pushy (phone) changed the queue: the Push's Auto DJ page shows it
+        (an add like + RANDOM, a removal by re-reading the queue)."""
+        if removed:
+            self.autodj_page.refresh_soon()
+        else:
+            self.autodj_page.pressed(108)
+
+    def _shuffle_watch(self):
+        """Latching shuffle: each time Auto DJ takes a song off the queue,
+        shuffle what's left, so every next song is a random pick."""
+        last = None
+        while True:   # started before self.running is set
+            time.sleep(1.0)
+            page = self.autodj_page
+            if not page.shuffle_on:
+                last = None
+                continue
+            page.refresh()
+            n = len(page.queue)
+            if last is not None and n < last and n > 1:
+                print('[autodj] a song left the queue: reshuffle', flush=True)
+                self._press_shuffle()
+            last = n
 
     def _press_delete(self):
         """Remove the selected song from Mixxx's Auto DJ queue: its Delete key,
@@ -547,18 +706,28 @@ class MixxxMidiBridge:
     def _check_drift(self, shown, pl, nav):
         """Mixxx's Playlists page under another painted nav entry: the real
         sidebar drifted from the nav - ask the script to re-home it."""
-        drifted = (shown and pl == 0 and 0 < nav != NAV_TREE_OPEN
-                   and NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)] != 'Playlists')
+        want = NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)] if nav > 0 else None
+        drifted = (shown and pl == 0 and 0 < nav != NAV_TREE_OPEN and want != 'Playlists')
+        # Mixxx's tree (mixxx_tree.py) says exactly where its selection is: with
+        # the nav painted and no playlist open it must be the nav's entry, on
+        # the top level (e.g. after leaving an open playlist it stayed on it)
+        rows = self.tree.rows() if self.tree and 0 < nav != NAV_TREE_OPEN and pl < 128 else None
+        sel = next((r for r in rows if r.selected), None) if rows else None
+        if sel is not None and (sel.depth != 1 or NAV_ALIASES.get(sel.name, sel.name) != want):
+            drifted = True
         now = time.monotonic()
         if not drifted:
             self._drift_since = None
             return
         if self._drift_since is None:
             self._drift_since = now
-        if now - self._drift_since >= RESYNC_AFTER_SECONDS and now - self._resync_at >= RESYNC_EVERY_SECONDS:
+        # one resync per drift: if it didn't help (keys not reaching Mixxx...),
+        # don't keep yanking the sidebar every few seconds
+        if (now - self._drift_since >= RESYNC_AFTER_SECONDS and now - self._resync_at >= RESYNC_EVERY_SECONDS
+                and self._resync_at < self._drift_since):
             self._resync_at = now
-            print(f'[library] sidebar drifted from the nav ({NAV_NAMES[min(nav - 1, len(NAV_NAMES) - 1)]}), resync',
-                  flush=True)
+            print(f'[library] sidebar drifted from the nav ({want}; Mixxx on '
+                  f'{sel.name if sel else "its Playlists page"}), resync', flush=True)
             self._send_mixxx(RESYNC_CC)
 
     def _report_playlists(self, count):
@@ -582,6 +751,28 @@ class MixxxMidiBridge:
             print(f'[library] playlists page: {count}', flush=True)
         self._pl_sent = (count, now)
         self._send_mixxx(PLAYLISTS_CC + bytes([count]))
+
+    def _report_popup(self, is_open):
+        """Tell the Push script whether a popup is shown (on change, and again
+        every couple of seconds while open in case the script reloaded)."""
+        last, at = self._popup_sent
+        now = time.monotonic()
+        # closed is repeated too (slower), so the script can't stay stuck ignoring the arrows
+        if is_open != last or now - at >= (POPUP_RESEND_SECONDS if is_open else 5 * POPUP_RESEND_SECONDS):
+            self._popup_sent = (is_open, now)
+            self._send_mixxx(POPUP_CC + bytes([1 if is_open else 0]))
+
+    def _popup_key(self, cc):
+        """An arrow while a popup shows: answer it (in a thread: xdotool)."""
+        p = self.popups
+        if cc == CC_LEFT:
+            p.move(-1)
+        elif cc == CC_RIGHT:
+            p.move(1)
+        elif cc == CC_UP:
+            threading.Thread(target=p.press, daemon=True).start()
+        elif cc == CC_DOWN:
+            threading.Thread(target=p.cancel, daemon=True).start()
 
     def _send_mixxx(self, data):
         """Bytes to the Push mapping, as if they came from the Push (Pi only)."""
@@ -657,6 +848,9 @@ class MixxxMidiBridge:
         """Send frames to the Push while the producer thread captures the next
         one - capture (the slow part) overlaps the USB transfer."""
         threading.Thread(target=self._frame_producer, daemon=True).start()
+        threading.Thread(target=self._shuffle_watch, daemon=True).start()
+        # phone page: search the library, add to Auto DJ (the Push page confirms it like + RANDOM)
+        WebQueue(self.music_drive, on_added=self._web_queue_changed).start()
         sent, window_start = 0, time.perf_counter()
 
         while self.running:

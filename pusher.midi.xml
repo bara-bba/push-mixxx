@@ -203,7 +203,7 @@
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.selectBtn</key>
-                <description>SELECT – toggles color-edit mode – CC48 (0x30)</description>
+                <description>SELECT – hold 2 s in Device: beatgrid edit mode – CC48 (0x30)</description>
                 <status>0xB0</status><midino>0x30</midino>
                 <options><script-binding/></options></control>
 
@@ -341,30 +341,54 @@
                 <description>Hotcue 4 Deck A – C4 (0x3C)</description>
                 <status>0x90</status><midino>0x3C</midino>
                 <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc4A</key>
+                <description>Hotcue 4 Deck A – C4 (0x3C) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x3C</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc5A</key>
                 <description>Hotcue 5 Deck A – C#4 (0x3D)</description>
                 <status>0x90</status><midino>0x3D</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc5A</key>
+                <description>Hotcue 5 Deck A – C#4 (0x3D) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x3D</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc6A</key>
                 <description>Hotcue 6 Deck A – D4 (0x3E)</description>
                 <status>0x90</status><midino>0x3E</midino>
                 <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc6A</key>
+                <description>Hotcue 6 Deck A – D4 (0x3E) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x3E</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc4B</key>
                 <description>Hotcue 4 Deck B – E4 (0x40)</description>
                 <status>0x90</status><midino>0x40</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc4B</key>
+                <description>Hotcue 4 Deck B – E4 (0x40) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x40</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc5B</key>
                 <description>Hotcue 5 Deck B – F4 (0x41)</description>
                 <status>0x90</status><midino>0x41</midino>
                 <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc5B</key>
+                <description>Hotcue 5 Deck B – F4 (0x41) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x41</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc6B</key>
                 <description>Hotcue 6 Deck B – F#4 (0x42)</description>
                 <status>0x90</status><midino>0x42</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc6B</key>
+                <description>Hotcue 6 Deck B – F#4 (0x42) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x42</midino>
                 <options><script-binding/></options></control>
 
             <!-- ══════════════════════════════════════════════════════════
@@ -377,30 +401,54 @@
                 <description>Hotcue 1 Deck A – G#4 (0x44) [user spec: G4→G#4, VU conflict avoided]</description>
                 <status>0x90</status><midino>0x44</midino>
                 <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc1A</key>
+                <description>Hotcue 1 Deck A – G#4 (0x44) [user spec: G4→G#4, VU conflict avoided] – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x44</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc2A</key>
                 <description>Hotcue 2 Deck A – A4 (0x45)</description>
                 <status>0x90</status><midino>0x45</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc2A</key>
+                <description>Hotcue 2 Deck A – A4 (0x45) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x45</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc3A</key>
                 <description>Hotcue 3 Deck A – A#4 (0x46)</description>
                 <status>0x90</status><midino>0x46</midino>
                 <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc3A</key>
+                <description>Hotcue 3 Deck A – A#4 (0x46) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x46</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc1B</key>
                 <description>Hotcue 1 Deck B – C5 (0x48)</description>
                 <status>0x90</status><midino>0x48</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc1B</key>
+                <description>Hotcue 1 Deck B – C5 (0x48) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x48</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc2B</key>
                 <description>Hotcue 2 Deck B – C#5 (0x49)</description>
                 <status>0x90</status><midino>0x49</midino>
                 <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc2B</key>
+                <description>Hotcue 2 Deck B – C#5 (0x49) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x49</midino>
+                <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.hc3B</key>
                 <description>Hotcue 3 Deck B – D5 (0x4A)</description>
                 <status>0x90</status><midino>0x4A</midino>
+                <options><script-binding/></options></control>
+            <control><group></group><key>PUSH2T.hc3B</key>
+                <description>Hotcue 3 Deck B – D5 (0x4A) – release (ends a stopped-deck preview)</description>
+                <status>0x80</status><midino>0x4A</midino>
                 <options><script-binding/></options></control>
 
             <!-- ══════════════════════════════════════════════════════════
@@ -471,6 +519,11 @@
                 <status>0x90</status><midino>0x55</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatgridA</key>
+                <description>Set Beatgrid Deck A – C#6 (0x55) – release (pressed light)</description>
+                <status>0x80</status><midino>0x55</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatjumpFwdA</key>
                 <description>Beatjump Forward Deck A – D6 (0x56) – size = beatloop size</description>
                 <status>0x90</status><midino>0x56</midino>
@@ -496,6 +549,11 @@
                 <status>0x90</status><midino>0x59</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatgridB</key>
+                <description>Set Beatgrid Deck B – F6 (0x59) – release (pressed light)</description>
+                <status>0x80</status><midino>0x59</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatjumpFwdB</key>
                 <description>Beatjump Forward Deck B – F#6 (0x5A) – size = beatloop size</description>
                 <status>0x90</status><midino>0x5A</midino>
@@ -516,9 +574,19 @@
                 <status>0x90</status><midino>0x5C</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatloopDecA</key>
+                <description>Beatloop Size ÷2 Deck A – G#6 (0x5C) – release (pressed light)</description>
+                <status>0x80</status><midino>0x5C</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatloopSetA</key>
                 <description>Set Beatloop Deck A – A6 (0x5D)</description>
                 <status>0x90</status><midino>0x5D</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.beatloopSetA</key>
+                <description>Set Beatloop Deck A – A6 (0x5D) – release (pressed light)</description>
+                <status>0x80</status><midino>0x5D</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.beatloopIncA</key>
@@ -526,9 +594,19 @@
                 <status>0x90</status><midino>0x5E</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatloopIncA</key>
+                <description>Beatloop Size ×2 Deck A – A#6 (0x5E) – release (pressed light)</description>
+                <status>0x80</status><midino>0x5E</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatloopDecB</key>
                 <description>Beatloop Size ÷2 Deck B – C7 (0x60)</description>
                 <status>0x90</status><midino>0x60</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.beatloopDecB</key>
+                <description>Beatloop Size ÷2 Deck B – C7 (0x60) – release (pressed light)</description>
+                <status>0x80</status><midino>0x60</midino>
                 <options><script-binding/></options></control>
 
             <control><group></group><key>PUSH2T.beatloopSetB</key>
@@ -536,9 +614,19 @@
                 <status>0x90</status><midino>0x61</midino>
                 <options><script-binding/></options></control>
 
+            <control><group></group><key>PUSH2T.beatloopSetB</key>
+                <description>Set Beatloop Deck B – C#7 (0x61) – release (pressed light)</description>
+                <status>0x80</status><midino>0x61</midino>
+                <options><script-binding/></options></control>
+
             <control><group></group><key>PUSH2T.beatloopIncB</key>
                 <description>Beatloop Size ×2 Deck B – D7 (0x62)</description>
                 <status>0x90</status><midino>0x62</midino>
+                <options><script-binding/></options></control>
+
+            <control><group></group><key>PUSH2T.beatloopIncB</key>
+                <description>Beatloop Size ×2 Deck B – D7 (0x62) – release (pressed light)</description>
+                <status>0x80</status><midino>0x62</midino>
                 <options><script-binding/></options></control>
 
             <!-- ══════════════════════════════════════════════════════════
@@ -678,6 +766,13 @@
             <control><group></group><key>PUSH2T.navResync</key>
                 <description>Library nav resync (CC 123, channel 16)</description>
                 <status>0xBF</status><midino>0x7B</midino>
+                <options><script-binding/></options></control>
+
+            <!-- Sent by the Pi screen app: a Mixxx popup is open (1) / closed (0); its
+                 box on the Push takes the arrows and DELETE meanwhile -->
+            <control><group></group><key>PUSH2T.popupState</key>
+                <description>Mixxx popup shown on the Push (CC 120, channel 16)</description>
+                <status>0xBF</status><midino>0x78</midino>
                 <options><script-binding/></options></control>
 
             <!-- Sent by screen/push2_midi_relay.py when the Push reconnects (Pi) -->

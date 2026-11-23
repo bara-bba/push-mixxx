@@ -165,7 +165,8 @@ PUSH2T.blIdxB   = 3;
 // ─── COLOR SLOTS (every pad / LED button has an ON and an OFF color) ─────────
 // Key 'P<note>' = pad (Note On 0x90), 'C<cc>' = CC button (0xB0). Values are
 // Push 2 palette indices (for the white-only CC buttons: brightness 0-127).
-// SELECT (CC48) toggles COLOR-EDIT MODE (see bottom of file): press a pad/
+// COLOR-EDIT MODE (see bottom of file; no longer on a button - SELECT now
+// holds for the beatgrid editor - so PUSH2T._colorToggle is unused): press a pad/
 // button, turn the tempo encoder (CC14) to change its color. Hold SHIFT to
 // show/edit the OFF ("not used") colors instead of the ON colors.
 // Edited values are printed to the Mixxx log as "[PUSH2T] COLORS ..." so they
@@ -227,8 +228,14 @@ PUSH2T.padOff = function (note) { return PUSH2T.slots['P' + note].off; };
 
 // LED writers used by all normal-mode feedback. Suppressed in color-edit mode
 // so live engine updates don't overwrite the color-edit display.
+// While a "flash" pad is held (PUSH2T.padPress) it shows white; state updates
+// arriving meanwhile are remembered and shown on release.
+PUSH2T._padHeld = {};
+PUSH2T._padNow = {};
 PUSH2T.setPad = function (note, color) {
     if (PUSH2T.colorMode) { return; }
+    PUSH2T._padNow[note] = color;
+    if (PUSH2T._padHeld[note]) { return; }
     midi.sendShortMsg(PUSH2T.PAD_STATIC, note, color);
 };
 PUSH2T.setCC = function (cc, value) {
@@ -260,6 +267,17 @@ PUSH2T.init = function (id, debugging) {
         PUSH2T.buildSlots();
         PUSH2T.clearAllPads();
         PUSH2T.stripRelease();
+        // the [Skin] controls outlive a script reload: no grid edit overlay left over
+        engine.setValue('[Skin]', 'pusher_grid', 0);
+        // ...and the nav the screen shows: carry on from there (Mixxx's sidebar
+        // didn't move), else the top buttons act for Tracks under an Auto DJ page
+        var navWas = engine.getValue('[Skin]', 'pusher_nav');
+        if (navWas >= 1 && navWas <= PUSH2T.NAV_REAL.length) {
+            PUSH2T.nav.cursor = navWas - 1;
+            PUSH2T.nav.real = PUSH2T.NAV_REAL[PUSH2T.nav.cursor];
+        } else {
+            engine.setValue('[Skin]', 'pusher_nav', PUSH2T.nav.cursor + 1);
+        }
         // Force Start-anchored beatloops on both decks (LoopAnchorPoint::Start = 0).
         // Root cause of "loop sets the cursor as the END instead of the START":
         // this isn't a script bug — Mixxx persists a per-deck loop_anchor flag
@@ -937,13 +955,20 @@ PUSH2T.drawMixButtons = function () {  // renders the Clip scene's FX layout
 };
 
 PUSH2T.drawTopRow = function () {
+    if (PUSH2T.grid.deck) {   // beatgrid edit buttons
+        [102, 104, 105, 106, 107, 108].forEach(function (cc) { PUSH2T.setCC(cc, PUSH2T.C.white); });
+        PUSH2T.setCC(103, PUSH2T.grid.markA >= 0 ? PUSH2T.C.green : PUSH2T.C.white);
+        PUSH2T.setCC(109, PUSH2T.C.green);
+        return;
+    }
     if (!PUSH2T._analyze) { PUSH2T.setCC(0x23, PUSH2T.inLibraryMode() ? 64 : 0); }
     if (PUSH2T.scene === 'clip') {
         PUSH2T.drawMixButtons();
     } else if (PUSH2T.onAutoDJPage()) {
         // Auto DJ page: on/off, fade now, skip next, shuffle, add random
         PUSH2T.setCC(104, engine.getValue('[AutoDJ]', 'enabled') ? PUSH2T.C.green : PUSH2T.C.white);
-        [105, 106, 107, 108].forEach(function (cc) { PUSH2T.setCC(cc, PUSH2T.C.white); });
+        [105, 106, 108].forEach(function (cc) { PUSH2T.setCC(cc, PUSH2T.C.white); });
+        PUSH2T.setCC(107, PUSH2T.shuffleOn ? PUSH2T.C.green : PUSH2T.C.white);   // latching
         PUSH2T.setCC(109, 0);
         PUSH2T.setCC(103, 0);
         PUSH2T.setCC(102, PUSH2T.previewPlaying() ? PUSH2T.C.green : PUSH2T.C.red);
@@ -1135,17 +1160,21 @@ PUSH2T.cupA = function (ch, ctrl, val) {
     if (val > 0) {
         if (engine.getValue('[Channel1]', 'play')) {
             engine.setValue('[Channel1]', 'cue_gotoandstop', 1);
+            engine.setValue('[Channel1]', 'cue_gotoandstop', 0);
             PUSH2T.cupPreviewA = false;
         } else if (PUSH2T._cupStoppedAction('[Channel1]') === 'set') {
             engine.setValue('[Channel1]', 'cue_set', 1);
+            engine.setValue('[Channel1]', 'cue_set', 0);
             PUSH2T.cupPreviewA = false;
         } else {
             engine.setValue('[Channel1]', 'cue_gotoandplay', 1);
+            engine.setValue('[Channel1]', 'cue_gotoandplay', 0);
             PUSH2T.cupPreviewA = true;
         }
     } else {
         if (PUSH2T.cupPreviewA) {
             engine.setValue('[Channel1]', 'cue_gotoandstop', 1);
+            engine.setValue('[Channel1]', 'cue_gotoandstop', 0);
             PUSH2T.cupPreviewA = false;
         }
     }
@@ -1156,17 +1185,21 @@ PUSH2T.cupB = function (ch, ctrl, val) {
     if (val > 0) {
         if (engine.getValue('[Channel2]', 'play')) {
             engine.setValue('[Channel2]', 'cue_gotoandstop', 1);
+            engine.setValue('[Channel2]', 'cue_gotoandstop', 0);
             PUSH2T.cupPreviewB = false;
         } else if (PUSH2T._cupStoppedAction('[Channel2]') === 'set') {
             engine.setValue('[Channel2]', 'cue_set', 1);
+            engine.setValue('[Channel2]', 'cue_set', 0);
             PUSH2T.cupPreviewB = false;
         } else {
             engine.setValue('[Channel2]', 'cue_gotoandplay', 1);
+            engine.setValue('[Channel2]', 'cue_gotoandplay', 0);
             PUSH2T.cupPreviewB = true;
         }
     } else {
         if (PUSH2T.cupPreviewB) {
             engine.setValue('[Channel2]', 'cue_gotoandstop', 1);
+            engine.setValue('[Channel2]', 'cue_gotoandstop', 0);
             PUSH2T.cupPreviewB = false;
         }
     }
@@ -1221,14 +1254,25 @@ PUSH2T.quantizeB = function (ch, ctrl, val) {
 
 // ──── ROWS 4-5: Hotcues ───────────────────────────────────────────────────────
 
+// Press = hotcue_N_activate 1, release = 0: on a stopped deck Mixxx previews
+// the hotcue while the pad is held and jumps back when it's let go. Without
+// the release the preview never ends and Mixxx's cue logic stays in preview
+// mode (the main CUE button then misbehaves too).
+PUSH2T._hotcueHeld = {};
 PUSH2T._hotcue = function (group, num, val) {
+    var key = group + num;
     if (val > 0) {
         if (PUSH2T.deleteActive) {
             // DELETE held: clear this hotcue instead of activating it.
             engine.setValue(group, 'hotcue_' + num + '_clear', 1);
+            engine.setValue(group, 'hotcue_' + num + '_clear', 0);
         } else {
             engine.setValue(group, 'hotcue_' + num + '_activate', 1);
+            PUSH2T._hotcueHeld[key] = true;
         }
+    } else if (PUSH2T._hotcueHeld[key]) {
+        PUSH2T._hotcueHeld[key] = false;
+        engine.setValue(group, 'hotcue_' + num + '_activate', 0);
     }
 };
 
@@ -1444,6 +1488,38 @@ PUSH2T.beatjumpFwdB = function (c, t, v) {
         PUSH2T.setPad(PUSH2T.PAD.bjfB, PUSH2T.padOn(PUSH2T.PAD.bjfB));
     }
 };
+
+// ──── Pressed feedback: white while held ──────────────────────────────────────
+// Action pads whose color shows a state (hotcue set, loop active) or nothing
+// at all (loop size, beatgrid) gave no sign of being pressed. They now go
+// white while held, like the beatjump pads, and back to their color on release.
+PUSH2T.FLASH_WHITE = PUSH2T.C.white;
+PUSH2T.padPress = function (note, v) {
+    if (PUSH2T.colorMode) { return; }
+    if (v > 0) {
+        PUSH2T._padHeld[note] = true;
+        midi.sendShortMsg(PUSH2T.PAD_STATIC, note, PUSH2T.FLASH_WHITE);
+    } else if (PUSH2T._padHeld[note]) {
+        PUSH2T._padHeld[note] = false;
+        var c = PUSH2T._padNow[note];
+        midi.sendShortMsg(PUSH2T.PAD_STATIC, note, c === undefined ? PUSH2T.padOff(note) : c);
+    }
+};
+(function () {
+    var flash = { loopIn: 'lin', loopOut: 'lout', beatloopDec: 'bld', beatloopInc: 'blu',
+                  beatloopSet: 'bls', beatgrid: 'bgr' };
+    for (var i = 1; i <= 6; i++) { flash['hc' + i] = 'hc' + i; }
+    ['A', 'B'].forEach(function (s) {
+        Object.keys(flash).forEach(function (fn) {
+            var orig = PUSH2T[fn + s], note = PUSH2T.PAD[flash[fn] + s];
+            PUSH2T[fn + s] = function (c, t, v, st, g) {
+                // beatgrid only acts with SHIFT held: no flash without it
+                if (!(fn === 'beatgrid' && v > 0 && !PUSH2T.shiftActive)) { PUSH2T.padPress(note, v); }
+                return orig.call(PUSH2T, c, t, v, st, g);
+            };
+        });
+    });
+})();
 
 // ──── CC: Load track / prev / next ───────────────────────────────────────────
 
@@ -1718,10 +1794,12 @@ PUSH2T.publishTime = function (n) {
 };
 
 PUSH2T.publishScene = function () {
-    engine.setValue('[Skin]', 'pusher_scene', PUSH2T.SCENE_IDS[PUSH2T.scene] || 0);
+    engine.setValue('[Skin]', 'pusher_scene', PUSH2T.grid.deck ? PUSH2T.SCENE_IDS.mix
+                                                        : PUSH2T.SCENE_IDS[PUSH2T.scene] || 0);
 };
 
 PUSH2T.setScene = function (name) {
+    PUSH2T.gridExit('scene ' + name);
     var wasBrowse = (PUSH2T.scene === 'browse');
     PUSH2T.scene = name;
     PUSH2T.publishScene();
@@ -1777,15 +1855,22 @@ PUSH2T.previewSeek = function (dir) {
 PUSH2T.top102 = function (c, t, v) {
     if (v > 0 && PUSH2T.inLibraryMode()) { PUSH2T.previewToggle(); }
 };
-// 103 in Browse: add the selected song(s) to the Auto DJ queue (SHIFT: on top)
-PUSH2T.top103 = function (c, t, v) {
-    if (v <= 0 || !PUSH2T.inLibraryMode() || PUSH2T.onAutoDJPage()) { return; }
-    if (engine.getValue('[Library]', 'focused_widget') !== 3) { return; }   // songs only
-    var key = PUSH2T.shiftActive ? 'AutoDjAddTop' : 'AutoDjAddBottom';
+// Add the selected song(s) to the Auto DJ queue (top = play next). Songs
+// focused, not on the Auto DJ page itself; true if added. The 2nd top button
+// blinks green as the confirmation.
+PUSH2T.autoDjAdd = function (top) {
+    if (!PUSH2T.inLibraryMode() || PUSH2T.onAutoDJPage()) { return false; }
+    if (engine.getValue('[Library]', 'focused_widget') !== 3) { return false; }   // songs only
+    var key = top ? 'AutoDjAddTop' : 'AutoDjAddBottom';
     engine.setValue('[Library]', key, 1);
     print('[PUSH2T] ' + key);
     PUSH2T.setCC(103, PUSH2T.C.green);
     engine.beginTimer(300, function () { PUSH2T.drawTopRow(); }, true);
+    return true;
+};
+// 103 in Browse: add to the Auto DJ queue (SHIFT: on top); SHIFT + Right does the same (bottom)
+PUSH2T.top103 = function (c, t, v) {
+    if (v > 0) { PUSH2T.autoDjAdd(PUSH2T.shiftActive); }
 };
 
 [104, 106, 107, 108].forEach(function (cc) {
@@ -1852,6 +1937,12 @@ PUSH2T.shiftBtn = function (c, t, v) {
 // Held while pressing Loop In or Loop Out -> disables (releases) the loop.
 
 PUSH2T.deleteBtn = function (c, t, v) {
+    if (PUSH2T.popupOpen) { return; }   // DELETE = Esc on the popup (screen app)
+    if (PUSH2T.grid.deck && !PUSH2T.colorMode) {   // beatgrid edit: DELETE = undo all
+        if (v > 0) { PUSH2T.gridUndoAll(); }
+        PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].on);
+        return;
+    }
     // Browse: deletes on the Recordings / Auto DJ pages instead of being a modifier
     if (v > 0 && PUSH2T.inLibraryMode() && !PUSH2T.colorMode && PUSH2T.libraryDelete()) { return; }
     if (v > 0) {
@@ -1904,8 +1995,19 @@ PUSH2T.connectRecording = function () {
 // Right = enter the highlighted folder / its songs (see below).
 // (Preview seeking is done only with the touch strip, never the arrows.)
 // Clip scene: Left/Right select an effect slot, Up/Down change its effect (fxArrow).
+// CC 120 ch 16 from the Pi screen app: a Mixxx popup is open and shown on
+// the Push; the screen app answers it with the arrows and DELETE, so they
+// must not also move the library or edit anything here.
+PUSH2T.popupOpen = false;
+PUSH2T.popupState = function (c, t, v) {
+    if ((v > 0) !== PUSH2T.popupOpen) { print('[PUSH2T] popup ' + (v > 0 ? 'open' : 'closed') + ' (CC 120 = ' + v + ')'); }
+    PUSH2T.popupOpen = v > 0;
+};
+
 PUSH2T._arrow = function (key, v) {
-    if (v > 0) { print('[PUSH2T] arrow ' + key + ' scene=' + PUSH2T.scene); }
+    if (v > 0) { print('[PUSH2T] arrow ' + key + ' scene=' + PUSH2T.scene + (PUSH2T.popupOpen ? ' (popup open: ignored)' : '')); }
+    if (PUSH2T.popupOpen) { return; }   // the popup on the Push takes them
+    if (v > 0 && PUSH2T.grid.deck && !PUSH2T.colorMode) { PUSH2T.gridArrow(key); return; }
     if (v > 0 && PUSH2T.scene === 'clip' && !PUSH2T.colorMode) { PUSH2T.fxArrow(key); return; }
     if (v <= 0 || PUSH2T.colorMode || !PUSH2T.inLibraryMode()) { return; }
     if (key === 'MoveUp' || key === 'MoveDown') {
@@ -1916,6 +2018,8 @@ PUSH2T._arrow = function (key, v) {
             engine.setValue('[Library]', 'focused_widget', 3);
         }
     }
+    // SHIFT + Right on the songs: add them to the Auto DJ queue
+    if (key === 'MoveRight' && PUSH2T.shiftActive && PUSH2T.autoDjAdd(false)) { return; }
     if (PUSH2T.plArrow(key)) { return; }
     if (PUSH2T.recArrow(key)) { return; }
     if (PUSH2T.navArrow(key)) { return; }
@@ -2169,15 +2273,27 @@ PUSH2T.autoDJButton = function (cc) {
     if (!key) { return; }
     if (key === 'enabled') {
         engine.setValue('[AutoDJ]', 'enabled', engine.getValue('[AutoDJ]', 'enabled') ? 0 : 1);
+    } else if (key === 'shuffle') {
+        PUSH2T.shuffleOn = !PUSH2T.shuffleOn;
+        PUSH2T.request(PUSH2T.shuffleOn ? PUSH2T.REQ_SHUFFLE_ON : PUSH2T.REQ_SHUFFLE_OFF);
+        PUSH2T.drawTopRow();
     } else {
         engine.setValue('[AutoDJ]', key, 1);
         engine.setValue('[AutoDJ]', key, 0);
+        // one-shot actions: blink the button green (the screen confirms too)
+        PUSH2T.setCC(cc, PUSH2T.C.green);
+        engine.beginTimer(400, function () { PUSH2T.drawTopRow(); }, true);
     }
     print('[PUSH2T] auto dj ' + key);
 };
 
 // One-shot requests to the Pi screen app ([Skin],pusher_req = kind * 128 + seq)
 PUSH2T.REQ_DELETE_KEY = 1;
+// SHUFFLE latches: while on, the screen app re-shuffles the queue each time Auto
+// DJ takes a song (Mixxx 2.5 has no [AutoDJ],shuffle: it presses Mixxx's button)
+PUSH2T.REQ_SHUFFLE_ON = 2;
+PUSH2T.REQ_SHUFFLE_OFF = 3;
+PUSH2T.shuffleOn = false;
 PUSH2T._reqSeq = 0;
 PUSH2T.request = function (kind) {
     PUSH2T._reqSeq = (PUSH2T._reqSeq + 1) % 128;
@@ -2298,6 +2414,7 @@ PUSH2T._decodeRelative = function (value) {
 };
 
 PUSH2T.browseEncoder = function (c, t, v) {
+    if (PUSH2T.popupOpen) { return; }
     var amount = PUSH2T._decodeRelative(v);
     if (amount === 0) return;
     print('[PUSH2T] browse encoder ' + amount + ' scene=' + PUSH2T.scene);
@@ -2350,8 +2467,26 @@ PUSH2T.browseEncoder = function (c, t, v) {
 //   • each change prints "[PUSH2T] COLORS {...}" to the Mixxx log
 // Leaving the mode restores normal LED feedback.
 
+PUSH2T.GRID_HOLD_MS = 2000;
+PUSH2T._selHold = 0;
+// SELECT: hold GRID_HOLD_MS in Device on the selected deck = beatgrid edit
+// mode (PUSH2T.gridEnter); in grid edit any press leaves it. A short press does
+// nothing. (It used to toggle colour-edit mode; the colours are baked into
+// PUSH2T.SAVED now. _colorToggle is kept should the editor be needed again.)
 PUSH2T.selectBtn = function (c, t, v) {
+    if (PUSH2T._selHold) { engine.stopTimer(PUSH2T._selHold); PUSH2T._selHold = 0; }
     if (v <= 0) { return; }
+    if (PUSH2T.colorMode) { PUSH2T._colorToggle(); return; }   // never on now, but don't get stuck
+    if (PUSH2T.grid.deck) { PUSH2T.gridExit('select'); return; }
+    if (PUSH2T.scene !== 'device') { return; }
+    PUSH2T._selHold = engine.beginTimer(PUSH2T.GRID_HOLD_MS, function () {
+        PUSH2T._selHold = 0;
+        if (PUSH2T.gridDeck()) { PUSH2T.gridEnter(PUSH2T.gridDeck()); }
+        else { PUSH2T.gridHint(); }   // no deck selected (or nothing loaded on it)
+    }, true);
+};
+
+PUSH2T._colorToggle = function () {
     if (!PUSH2T.colorMode) {
         PUSH2T.colorMode = true;
         PUSH2T.selSlot = null;
@@ -2372,6 +2507,185 @@ PUSH2T.selectBtn = function (c, t, v) {
         PUSH2T.dumpColors();
         print('[PUSH2T] Color-edit mode OFF');
     }
+};
+
+// ─── BEATGRID EDIT MODE (hold SELECT 2 s in Device) ──────────────────────────
+// For the selected deck (SHIFT + deck select, as for the tempo strip), with a
+// song loaded; without one the deck select buttons blink instead. The skin shows the Mix page (zoomed
+// scrolling waveforms with the beat lines) and the Pi screen app
+// (screen/grid_page.py) paints the edit panel and the top buttons' labels:
+//   102 BEAT HERE  nearest beat onto the playhead (beats_translate_curpos)
+//   103 BEAT 1     mark a beat (and put the grid through it)
+//   104 BEAT 2     mark a later beat: BPM = beats between them / time
+//   105 ÷2  106 ×2  107 UNDO  108 ZOOM (cycles GRID_ZOOMS)  109 DONE
+//   Left/Right     grid earlier / later    Up/Down   BPM +/- 0.01
+//   (SHIFT: x10)   jog/play/cue work as usual to find the beats
+// SHIFT + deck select switches the deck being edited; SELECT, DONE or a scene
+// button leave. DELETE (lit while editing) puts the grid back as it was when
+// the edit started (gridUndoAll). [Skin],pusher_grid = deck (1/2, 0 = off) + 4 when BEAT 1 is
+// set, pusher_grid_a = BEAT 1 time in 1/10 s, pusher_grid_n = beats the last
+// BEAT 2 measured over.
+PUSH2T.GRID_ZOOMS = [2, 1, 4];
+PUSH2T.GRID_STEP = 0.01;       // beats_adjust_faster/slower step (Mixxx's)
+PUSH2T.GRID_MAX_STEPS = 6000;
+PUSH2T.grid = { deck: 0, group: null, markA: -1, n: 0, zoomWas: 0, zoomIdx: 0, orig: null, busy: false };
+PUSH2T.GRID_TRANSLATE_S = 0.01;   // beats_translate_earlier/later step (Mixxx: 10 ms)
+
+PUSH2T.gridDeck = function () {
+    var sel = PUSH2T.selectedGroup();
+    return sel && engine.getValue(sel, 'track_loaded') > 0 ? sel : null;
+};
+
+// "Select a deck first": the deck select buttons blink a few times
+PUSH2T.gridHint = function () {
+    var n = 0;
+    print('[PUSH2T] grid edit: select a deck with a song (SHIFT + deck select) first');
+    var t = engine.beginTimer(150, function () {
+        n++;
+        var on = n % 2 === 1;
+        PUSH2T.setCC(0x17, on ? PUSH2T.slots['C23'].on : PUSH2T.slots['C23'].off);
+        PUSH2T.setCC(0x1B, on ? PUSH2T.slots['C27'].on : PUSH2T.slots['C27'].off);
+        if (n >= 6) { engine.stopTimer(t); PUSH2T.drawDeckSelect(); }
+    });
+};
+
+PUSH2T._gridPush = function (key, times) {
+    var g = PUSH2T.grid.group;
+    for (var i = 0; i < (times || 1); i++) {
+        engine.setValue(g, key, 1);
+        engine.setValue(g, key, 0);
+    }
+};
+
+PUSH2T.gridPublish = function () {
+    var gr = PUSH2T.grid;
+    engine.setValue('[Skin]', 'pusher_grid', gr.deck ? gr.deck + (gr.markA >= 0 ? 4 : 0) : 0);
+    engine.setValue('[Skin]', 'pusher_grid_a', gr.markA >= 0 ? Math.round(gr.markA * 10) : 0);
+    engine.setValue('[Skin]', 'pusher_grid_n', gr.n);
+};
+
+PUSH2T.gridEnter = function (group) {
+    if (!group) { return; }
+    var gr = PUSH2T.grid;
+    if (gr.deck) { engine.setValue(gr.group, 'waveform_zoom', gr.zoomWas); }
+    gr.group = group;
+    gr.deck = group === '[Channel1]' ? 1 : 2;
+    gr.markA = -1;
+    gr.n = 0;
+    gr.zoomWas = engine.getValue(group, 'waveform_zoom');
+    gr.zoomIdx = 0;
+    // the grid as it is now, for DELETE = undo all: BPM and the beat phase at a position
+    gr.orig = { bpm: engine.getValue(group, 'file_bpm'), pos: PUSH2T._gridPosOf(group),
+                bd: engine.getValue(group, 'beat_distance') };
+    PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].on);
+    engine.setValue(group, 'waveform_zoom', PUSH2T.GRID_ZOOMS[0]);
+    PUSH2T.publishScene();
+    PUSH2T.gridPublish();
+    PUSH2T.drawTopRow();
+    print('[PUSH2T] grid edit ON ' + group + ' bpm ' + engine.getValue(group, 'file_bpm'));
+};
+
+PUSH2T.gridExit = function (why) {
+    var gr = PUSH2T.grid;
+    if (!gr.deck) { return; }
+    engine.setValue(gr.group, 'waveform_zoom', gr.zoomWas);
+    gr.deck = 0;
+    gr.markA = -1;
+    PUSH2T.setCC(PUSH2T.CC_BTN.del, PUSH2T.slots['C118'].off);
+    PUSH2T.publishScene();
+    PUSH2T.gridPublish();
+    PUSH2T.drawTopRow();
+    print('[PUSH2T] grid edit OFF (' + why + ')');
+};
+
+PUSH2T._gridPosOf = function (g) {
+    return engine.getValue(g, 'playposition') * engine.getValue(g, 'duration');
+};
+PUSH2T._gridPos = function () { return PUSH2T._gridPosOf(PUSH2T.grid.group); };
+
+// DELETE while editing: back to the grid as it was when the edit started.
+// Mixxx's own undo first (it keeps only 10 steps, quick bursts as one); then
+// whatever is still off is corrected against the snapshot taken at the start:
+// the BPM in 0.01 steps, then the beat phase in 10 ms steps at the playhead.
+// The engine updates file_bpm / beat_distance a moment later, hence the timers.
+PUSH2T.gridUndoAll = function () {
+    var gr = PUSH2T.grid, g = gr.group, o = gr.orig;
+    if (!o || gr.busy) { return; }
+    gr.busy = true;
+    for (var i = 0; i < 12 && engine.getValue(g, 'beats_undo_possible'); i++) {
+        PUSH2T._gridPush('beats_undo_adjustment');
+    }
+    engine.beginTimer(150, function () {
+        var steps = Math.round((o.bpm - engine.getValue(g, 'file_bpm')) / PUSH2T.GRID_STEP);
+        steps = Math.max(-PUSH2T.GRID_MAX_STEPS, Math.min(PUSH2T.GRID_MAX_STEPS, steps));
+        if (steps) { PUSH2T._gridPush(steps > 0 ? 'beats_adjust_faster' : 'beats_adjust_slower', Math.abs(steps)); }
+        engine.beginTimer(150, function () {
+            if (o.bpm > 0) {
+                var beats = (PUSH2T._gridPosOf(g) - o.pos) * o.bpm / 60 + o.bd;
+                var off = engine.getValue(g, 'beat_distance') - (beats - Math.floor(beats));
+                off -= Math.round(off);                       // -0.5 .. 0.5 beat
+                var moves = Math.round(off * 60 / o.bpm / PUSH2T.GRID_TRANSLATE_S);
+                // further into the beat than it was = the grid sits earlier: move it later
+                if (moves) { PUSH2T._gridPush(moves > 0 ? 'beats_translate_later' : 'beats_translate_earlier', Math.abs(moves)); }
+            }
+            gr.markA = -1;
+            gr.n = 0;
+            gr.busy = false;
+            PUSH2T.gridPublish();
+            PUSH2T.drawTopRow();
+            print('[PUSH2T] grid: undo all -> ' + engine.getValue(g, 'file_bpm').toFixed(3) + ' BPM (was ' + o.bpm.toFixed(3) + ')');
+        }, true);
+    }, true);
+};
+
+PUSH2T.gridButton = function (cc) {
+    var gr = PUSH2T.grid, g = gr.group;
+    if (cc === 102) { PUSH2T._gridPush('beats_translate_curpos'); }
+    else if (cc === 103) {
+        gr.markA = PUSH2T._gridPos();
+        gr.n = 0;
+        PUSH2T._gridPush('beats_translate_curpos');
+        print('[PUSH2T] grid: beat 1 at ' + gr.markA.toFixed(3) + ' s');
+    } else if (cc === 104) { PUSH2T.gridMeasure(); }
+    else if (cc === 105) { PUSH2T._gridPush('beats_set_halve'); }
+    else if (cc === 106) { PUSH2T._gridPush('beats_set_double'); }
+    else if (cc === 107) { PUSH2T._gridPush('beats_undo_adjustment'); }
+    else if (cc === 108) {
+        gr.zoomIdx = (gr.zoomIdx + 1) % PUSH2T.GRID_ZOOMS.length;
+        engine.setValue(g, 'waveform_zoom', PUSH2T.GRID_ZOOMS[gr.zoomIdx]);
+    } else if (cc === 109) { PUSH2T.gridExit('done'); return; }
+    PUSH2T.gridPublish();
+    PUSH2T.drawTopRow();
+};
+
+// BEAT 2: the playhead is a beat some whole number of beats after BEAT 1.
+// That number comes from the current BPM (so it must be roughly right - use
+// ÷2 / ×2 first if it's half or double); the exact BPM is then that many beats
+// over the measured time. Mixxx only moves the grid's BPM in 0.01 steps, so
+// it's stepped there, and the grid is put through this beat again.
+PUSH2T.gridMeasure = function () {
+    var gr = PUSH2T.grid, g = gr.group;
+    if (gr.markA < 0) { print('[PUSH2T] grid: set BEAT 1 first'); return; }
+    var dt = PUSH2T._gridPos() - gr.markA;
+    var bpm = engine.getValue(g, 'file_bpm');
+    if (dt < 1 || bpm <= 0) { print('[PUSH2T] grid: BEAT 2 too close or no BPM (' + dt + ', ' + bpm + ')'); return; }
+    var n = Math.max(1, Math.round(dt * bpm / 60));
+    var target = 60 * n / dt;
+    var steps = Math.round((target - bpm) / PUSH2T.GRID_STEP);
+    steps = Math.max(-PUSH2T.GRID_MAX_STEPS, Math.min(PUSH2T.GRID_MAX_STEPS, steps));
+    PUSH2T._gridPush(steps > 0 ? 'beats_adjust_faster' : 'beats_adjust_slower', Math.abs(steps));
+    PUSH2T._gridPush('beats_translate_curpos');
+    gr.n = n;
+    print('[PUSH2T] grid: ' + n + ' beats over ' + dt.toFixed(3) + ' s = ' + target.toFixed(3)
+          + ' BPM (was ' + bpm.toFixed(3) + ', now ' + engine.getValue(g, 'file_bpm').toFixed(3) + ')');
+};
+
+PUSH2T.gridArrow = function (key) {
+    var times = PUSH2T.shiftActive ? 10 : 1;
+    if (key === 'MoveLeft') { PUSH2T._gridPush('beats_translate_earlier', times); }
+    else if (key === 'MoveRight') { PUSH2T._gridPush('beats_translate_later', times); }
+    else if (key === 'MoveUp') { PUSH2T._gridPush('beats_adjust_faster', times); }
+    else if (key === 'MoveDown') { PUSH2T._gridPush('beats_adjust_slower', times); }
 };
 
 // DUPLICATE (CC88): in color-edit mode, press it, press a pad/button to copy
@@ -2471,6 +2785,28 @@ PUSH2T.fxTouch7 = function (c, t, v) { PUSH2T.fxTouch(6, v); };
     var orig = PUSH2T[e[0]];
     PUSH2T[e[0]] = function (c, t, v, st, g) {
         if (PUSH2T.scene === 'clip') { PUSH2T.fxButton(e[1], v); return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
+
+[['top102', 102], ['top103', 103], ['top104', 104], ['top106', 106], ['top107', 107],
+ ['top108', 108], ['gainResetA', 105], ['gainResetB', 109]].forEach(function (e) {
+    var orig = PUSH2T[e[0]];
+    PUSH2T[e[0]] = function (c, t, v, st, g) {
+        if (PUSH2T.grid.deck) { if (v > 0) { PUSH2T.gridButton(e[1]); } return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
+[['deckSelA', '[Channel1]'], ['deckSelB', '[Channel2]']].forEach(function (e) {
+    var orig = PUSH2T[e[0]];
+    PUSH2T[e[0]] = function (c, t, v, st, g) {
+        if (PUSH2T.grid.deck) {   // SHIFT + deck select: edit that deck instead
+            if (v > 0 && PUSH2T.shiftActive && engine.getValue(e[1], 'track_loaded')) {
+                orig.call(PUSH2T, c, t, v, st, g);   // it becomes the selected deck too
+                PUSH2T.gridEnter(e[1]);
+            }
+            return;   // a plain press would deselect the deck: ignored while editing
+        }
         return orig.call(PUSH2T, c, t, v, st, g);
     };
 });
@@ -2592,6 +2928,28 @@ PUSH2T._analyzeStart = function () {
     PUSH2T.setCC(0x23, 127);
     print('[PUSH2T] batch analyze started');
 };
+
+// Beatgrid edit mode: the encoders and buttons around the screen that aren't
+// part of it do nothing (no gain / volume / tempo changes by accident), and
+// only the edited deck's jog moves. A touch release still goes through, so a
+// scratch grabbed before entering is let go.
+['gainA', 'gainB', 'masterVol', 'tapTempo', 'metronomeBtn'].forEach(function (name) {
+    var orig = PUSH2T[name];
+    if (typeof orig !== 'function') { return; }
+    PUSH2T[name] = function (c, t, v, st, g) {
+        if (PUSH2T.grid.deck) { return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
+[['rateA', '[Channel1]'], ['rateB', '[Channel2]'], ['jogTouchA', '[Channel1]'], ['jogTouchB', '[Channel2]']].forEach(function (e) {
+    var orig = PUSH2T[e[0]];
+    if (typeof orig !== 'function') { return; }
+    PUSH2T[e[0]] = function (c, t, v, st, g) {
+        var touch = e[0].indexOf('jogTouch') === 0;
+        if (PUSH2T.grid.deck && PUSH2T.grid.group !== e[1] && !(touch && v === 0)) { return; }
+        return orig.call(PUSH2T, c, t, v, st, g);
+    };
+});
 
 // Wrap every button/pad handler so color-edit mode can intercept it. Done at
 // script load (not init) so the wrapped versions are what the XML resolves.

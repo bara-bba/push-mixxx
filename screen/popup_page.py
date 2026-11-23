@@ -25,7 +25,7 @@ from pi_stats import BODY_BOLD_FONTS, BODY_FONTS, DIM, EDGE, FAINT, INK, LIME, L
 
 POLL_SECONDS = 0.25
 RETRY_SECONDS = 5.0
-STATE_ACTIVE, STATE_FOCUSED, STATE_DEFAULT = 1, 12, 39
+STATE_ACTIVE, STATE_FOCUSED, STATE_SHOWING, STATE_DEFAULT = 1, 12, 25, 39
 REFOCUS_AFTER = 2          # polls with Mixxx's window inactive (and no popup) before refocusing
 REFOCUS_EVERY_SECONDS = 3.0
 TEXT_ROLES = {'label', 'text', 'static', 'paragraph', 'heading'}
@@ -131,6 +131,8 @@ class MixxxPopups(Atspi):
                         if role == 'frame' and (self._prop(d, p, 'Name') or '').endswith('Mixxx'):
                             main_active = bool(self._states(d, p) >> STATE_ACTIVE & 1)
                             continue   # the main window
+                        if not self._states(d, p) >> STATE_SHOWING & 1:
+                            continue   # a closed window Mixxx keeps (e.g. the startup Library Scanner)
                         old = self.current()
                         if old and old.path == p:
                             popup = old   # still open: keep the reading and the choice
